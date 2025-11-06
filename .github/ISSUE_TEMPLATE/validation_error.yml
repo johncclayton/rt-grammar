@@ -1,0 +1,91 @@
+name: 🐛 Validation Error Report
+description: Report a .rts file that fails validation but should be valid
+title: "[Validation Error]: "
+labels: ["validation-error", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a validation issue! Please provide as much detail as possible to help us improve the grammar.
+        
+  - type: textarea
+    id: rts-file
+    attributes:
+      label: RealTest Script (.rts file)
+      description: Paste the content of your .rts file that's failing validation. Please include the complete file or at least the relevant sections.
+      placeholder: |
+        // Paste your .rts file content here
+        // Example:
+        // Strategy: My Strategy
+        // 
+        // Data
+        //   Bar: Daily
+        //   ...
+      render: text
+    validations:
+      required: true
+      
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Error Message
+      description: Paste the complete error message from the validator
+      placeholder: |
+        Example:
+        [  1/1] my_strategy.rts                          [FAIL]
+        
+        Error details:
+        Unexpected token Token('NEWLINE', '\n') at line 23, column 5
+        Expected one of: COLON
+      render: text
+    validations:
+      required: true
+      
+  - type: input
+    id: command
+    attributes:
+      label: Command Used
+      description: What command did you run?
+      placeholder: "python validate_rts.py --file my_strategy.rts"
+    validations:
+      required: false
+      
+  - type: dropdown
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+      options:
+        - This file should validate successfully (it works in RealTest)
+        - This file should fail validation but with a clearer error message
+        - Other (explain below)
+    validations:
+      required: true
+      
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: |
+        Any other context about the problem:
+        - Does this file work correctly in RealTest?
+        - Which RealTest version are you using?
+        - Is this a specific syntax feature that might be missing?
+      placeholder: |
+        This .rts file runs successfully in RealTest 2024.3.
+        The issue appears to be with the new "Setting:" syntax introduced in version 2024.
+    validations:
+      required: false
+      
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I've included the complete .rts file or relevant sections
+          required: true
+        - label: I've included the complete error message
+          required: true
+        - label: This file works correctly in RealTest (if applicable)
+          required: false
+

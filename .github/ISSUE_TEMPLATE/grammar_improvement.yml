@@ -1,0 +1,57 @@
+name: ✨ Grammar Enhancement
+description: Suggest an improvement or addition to the RealTest grammar
+title: "[Enhancement]: "
+labels: ["enhancement", "grammar"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the RealTest grammar! Describe what feature or syntax should be added or improved.
+        
+  - type: dropdown
+    id: enhancement-type
+    attributes:
+      label: Enhancement Type
+      options:
+        - Missing RealTest feature/syntax
+        - Better error messages
+        - Performance improvement
+        - Documentation
+        - Other
+    validations:
+      required: true
+      
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What would you like to see added or improved?
+      placeholder: |
+        The grammar should support the new "Portfolio" section introduced in RealTest 2024.
+    validations:
+      required: true
+      
+  - type: textarea
+    id: example
+    attributes:
+      label: Example Code
+      description: If applicable, provide an example of the RealTest syntax you'd like to see supported
+      placeholder: |
+        Portfolio
+          InitialEquity: 100000
+          MaxPositions: 10
+        End
+      render: text
+    validations:
+      required: false
+      
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Why is this enhancement important? How would it help you or others?
+      placeholder: |
+        Many of my strategies use the Portfolio section, and I'd like to validate them with this tool.
+    validations:
+      required: false
+

@@ -1,0 +1,9 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 RealTest Community Forum
+    url: https://www.realtest.com/forum/
+    about: For general RealTest questions and discussions
+  - name: 📚 RealTest Documentation
+    url: https://www.realtest.com/
+    about: Official RealTest documentation and resources
+

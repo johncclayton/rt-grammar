@@ -129,6 +129,31 @@ The included `realtest.lark` grammar defines the complete RealTest Script Langua
 - **Functions**: MA(), RSI(), ATR(), Extern(), etc.
 - **Comments**: // single-line and /* multi-line */
 
+## Reporting Issues
+
+### 🐛 Found a Validation Error?
+
+If you have a `.rts` file that **works correctly in RealTest** but **fails validation** with this tool, please help us improve the grammar!
+
+**[Report a Validation Error →](../../issues/new?assignees=&labels=validation-error%2Cbug&template=validation_error.yml)**
+
+When reporting, please include:
+- ✅ Your complete `.rts` file (or relevant sections)
+- ✅ The full error message from the validator
+- ✅ Confirmation that it works in RealTest (and which version)
+
+**Quick Tip:** You can run the validator with `--file` to get detailed error output for a single file:
+
+```bash
+python validate_rts.py --file your_strategy.rts
+```
+
+### ✨ Have a Suggestion?
+
+Want to suggest a grammar improvement or report another type of issue?
+
+**[Browse Issue Templates →](../../issues/new/choose)**
+
 ## Troubleshooting
 
 ### "Grammar file not found"
@@ -161,6 +186,8 @@ Expected one of: COLON
 ```
 
 Fix the syntax error at the indicated line and re-run.
+
+**If you believe the error is incorrect** (i.e., your file works in RealTest), please [report it as a validation error](../../issues/new?assignees=&labels=validation-error%2Cbug&template=validation_error.yml)!
 
 ## Advanced Usage
 
