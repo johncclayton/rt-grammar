@@ -1,0 +1,150 @@
+%import common.WS
+%import common.CPP_COMMENT
+%import common.WS_INLINE
+%import common.NEWLINE
+%import common.SIGNED_NUMBER -> NUMBER
+
+INLINE_COMMENT: /\{(?!%)[^}]*\}/
+BLOCK_COMMENT: /\/\*(?:.|\n)*?\*\//
+
+%ignore WS
+%ignore WS_INLINE
+%ignore CPP_COMMENT
+%ignore INLINE_COMMENT
+%ignore BLOCK_COMMENT
+
+DATA_HEADER: /Data:/
+GRAPHS_HEADER: /Graphs:/
+IMPORT_HEADER: /Import:/
+SETTINGS_HEADER: /Settings:/
+BENCHMARK_HEADER: /Benchmark:/
+PARAMETERS_HEADER: /Parameters:/
+STRATEGY_HEADER: /Strategy:/
+TEMPLATE_HEADER: /Template:/
+INCLUDE_HEADER: /Include:/
+CHARTS_HEADER: /Charts:/
+TRADES_HEADER: /Trades:/
+NOTES_HEADER: /Notes:/
+LIBRARY_HEADER: /Library:/
+NAMESPACE_HEADER: /Namespace:/
+ORDERSETTINGS_HEADER: /OrderSettings:/
+ORDERINCLUDE_HEADER: /OrderInclude:/
+RESULTS_HEADER: /Results:/
+SCAN_HEADER: /Scan:/
+SCANINCLUDE_HEADER: /ScanInclude:/
+SCANSETTINGS_HEADER: /ScanSettings:/
+TESTSETTINGS_HEADER: /TestSettings:/
+TESTDATA_HEADER.1: /TestData:/
+COMBINED_HEADER: /Combined:/
+WALKFORWARD_HEADER: /WalkForward:/
+
+// Section-specific keywords based on RT manual section 17.17 and sample usage analysis
+SETTINGS_KEYWORD.11: /(?i)(AccountSize|AccountType|AllowSameName|AlwaysImport|BarSize|CashIntPct|Currency|DataFile|DateDisplay|DateInput|DateSym|DaysPerYear|Dividends|EndDate|EndOfTestExits|ExchangeMap|Filter|HolidayList|KeepTrades|LTGains|LegacyMode|MarginIntPct|NumBars|NumDays|OptKeepBest|OptKeepByDate|OptScoreCol|OptSortResults|OptTestInterval|OptTestLength|OptTimeUnit|OptWalkForward|OptimizeMode|OptimizeSettings|OrderClerkFolder|OrdersComment|OrdersFile|OrdersLiveData|OrdersMode|OrdersNetLiq|OrdersTemplate|RandomSeed|ReportContent|ReportsFolder|ResultsFile|RiskFreeRateSym|STGains|SaveChartsTo|SavePositionsAs|SaveScanAs|SaveStatsAs|SaveTestListAs|SaveTradesAs|SaveTradesType|ScanNoDefCols|ScanNoHeader|ScanNoWindow|SkipTestIf|StartDate|SymChangeList|TaxOwed|TestName|TestOutput|TestScan|TestScanAllDates|UseAvailableBars)/
+
+IMPORT_KEYWORD.11: /(?i)(Adjustment|CIIFamily|CIILevel|CSVDateFmt|CSVDelim|CSVFields|CSVFile|CSVNumFmt|Classification|Constituency|DataPath|DataSource|EndDate|EventListFile|ExcludeIf|ExcludeList|Fundamentals|IncludeList|KeepAdjusted|KeepNonIncluded|KeepRedundant|LogFile|NoWeekends|PadAlignSym|Padding|RemoveLatest|SaveAs|StartDate|SymInfoFile|Update)/
+
+STRATEGY_KEYWORD.11: /(?i)(Allocation|AllowMissingBar|AllowNoVolume|Ambiguity|BarSize|CalendarSym|CashInOut|CashList|Category|CloseSlip|Commission|Compounded|DebugEntry|DebugExit|DebugTargetStop|DynamicSizing|EntryLimit|EntryScore|EntrySetup|EntrySkip|EntryStop|EntryTime|EntryTradeValue|ExitLimit|ExitLimitQty|ExitLimitTime|ExitQty|ExitRule|ExitScore|ExitStop|ExitStopQty|ExitStopTime|ExitTime|ExitTradeValue|FeesInOut|FeesList|FuturesMargin|GreedyScoring|IgnoreDividends|LimitExtra|LimitSlip|MarkToMarket|MaxCatExp|MaxCatInv|MaxEntries|MaxExposure|MaxInvested|MaxLongExp|MaxLongInv|MaxNetExp|MaxNetInv|MaxNewExp|MaxNewInv|MaxNewPos|MaxPerTurn|MaxPositions|MaxSameCat|MaxSameSym|MaxSetups|MaxShortExp|MaxShortInv|MaxSymExp|MaxSymInv|MinFreeCash|MinNetExp|MinNetInv|OpenSlip|OrderNote|OrdersFile|OrdersMktAsLmtPct|OrdersTemplate|PriceRound|QtyFinal|QtyPrice|QtyRound|QtyType|Quantity|Reduce|RollCost|SetupScore|SetupSkip|Side|Slippage|StartPercent|StopSlip|StrategyScore|TLAdjusted|TLDateFmt|TLDelim|TLFields|TLIgnoreRules|TLNumFmt|TLStratName|TLTimeShift|Tracker|TradeList|Using)/
+
+RESERVED_IDENTIFIER.10: /(?i)(Symbol|Name|BarNum|InfoID|InfoExpiry|InfoFloat|InfoGICS|InfoMargin|InfoTRBC|FilterNum|InList|ListNum|PointValue|InfoShares|TickSize)/
+RESERVED_WORD.9: /(?i)\?[a-zA-Z]+(\?)?/
+WATCHLIST_REF: /&[-A-Za-z0-9_.@]+/
+PATH_LITERAL.0: /(?!\/\/)(?!\s*[A-Za-z_][A-Za-z0-9_]*\s*\()(?![A-Za-z_][A-Za-z0-9_]*:)(?:#[^\n]+|[^,()\[\]{}\n\/]+(?:\/(?!\/)[^,()\[\]{}\n\/]*)*)/
+SECTION_WORD.6: /(?i)(Data|Graphs|Import|Settings|Benchmark|Parameters|Strategy|Template|Include|Charts|Trades|Notes|Library|Namespace|OrderSettings|OrderInclude|Results|Scan|ScanInclude|ScanSettings|TestSettings|Combined|WalkForward)/
+INCLUDE_RAW.0: /[^\{\n]+/
+NOT.8: /(?i)not/
+
+start: section+
+
+section: benchmark_section | charts_section | data_section | graphs_section | \
+         include_section | library_section | namespace_section | testsettings_section | \
+         notes_section | import_section | settings_section | parameters_section | testdata_section | \
+         strategy_section | template_section | combined_section | walkforward_section | trades_section | order_settings_section | order_include_section | \
+         results_section | scan_section | scan_include_section | scan_settings_section
+
+notes_section: NOTES_HEADER NEWLINE? NOTE_BLOCK?
+NOTE_BLOCK: /(?ms).+?(?=^[A-Za-z_][A-Za-z0-9_]*:|\Z)/
+
+data_section: DATA_HEADER NEWLINE? declaration*
+graphs_section: GRAPHS_HEADER NEWLINE? declaration*
+import_section: IMPORT_HEADER NEWLINE? declaration*
+include_section: INCLUDE_HEADER (expression NEWLINE | NEWLINE?) declaration*
+settings_section: SETTINGS_HEADER NEWLINE? declaration*
+benchmark_section: BENCHMARK_HEADER (expression NEWLINE | NEWLINE?) declaration*
+parameters_section: PARAMETERS_HEADER NEWLINE? parameters_declaration*
+strategy_section: STRATEGY_HEADER (expression NEWLINE | NEWLINE?) declaration*
+template_section: TEMPLATE_HEADER (expression NEWLINE | NEWLINE?) declaration*
+combined_section: COMBINED_HEADER NEWLINE? declaration*
+walkforward_section: WALKFORWARD_HEADER NEWLINE? walkforward_entry*
+walkforward_entry: walkforward_list_declaration | NEWLINE
+walkforward_list_declaration: identifier ":" _TAB? walkforward_list CPP_COMMENT? NEWLINE?
+walkforward_list: walkforward_item (walkforward_sep walkforward_item)*
+walkforward_item: date_literal | NUMBER
+walkforward_sep: "," NEWLINE*
+charts_section: CHARTS_HEADER NEWLINE? declaration*
+trades_section: TRADES_HEADER NEWLINE? declaration*
+library_section: LIBRARY_HEADER NEWLINE? declaration*
+testdata_section: TESTDATA_HEADER NEWLINE? declaration*
+results_section: RESULTS_HEADER NEWLINE? declaration*
+scan_section: SCAN_HEADER NEWLINE? declaration*
+scan_include_section: SCANINCLUDE_HEADER NEWLINE? declaration*
+scan_settings_section: SCANSETTINGS_HEADER NEWLINE? declaration*
+testsettings_section: TESTSETTINGS_HEADER NEWLINE? declaration*
+order_settings_section: ORDERSETTINGS_HEADER NEWLINE? declaration*
+order_include_section: ORDERINCLUDE_HEADER NEWLINE? declaration*
+
+namespace_expr: identifier | /(?i)none/
+namespace_section: NAMESPACE_HEADER NEWLINE? namespace_expr NEWLINE?
+
+date_expr: date_literal | "Latest" | "Earliest"
+date_identifier: /(?i)StartDate/ | /(?i)EndDate/
+include_list_expr: string_literal | loose_field_list | field_list | path_name
+include_name: / \{ "[^"]*" \} /
+aliased_item: (identifier | stock_symbol | symbol_item) ">" identifier
+field_item: aliased_item | identifier | reserved_identifier | SECTION_WORD | WATCHLIST_REF | stock_symbol | string_literal | symbol_item
+loose_field_list: field_item+
+include_raw: INCLUDE_RAW
+declaration: date_declaration | include_list_declaration | normal_declaration
+parameters_declaration: parameter_range_declaration | parameter_list_declaration | date_declaration | include_list_declaration | normal_declaration
+parameter_range_declaration: qualified_name ":" _TAB? "from" NUMBER "to" NUMBER "step" NUMBER ("def" NUMBER)? NEWLINE?
+parameter_list_declaration: qualified_name ":" _TAB? NUMBER ("," NUMBER)* NEWLINE?
+date_declaration: date_identifier ":" _TAB? date_expr NEWLINE?
+include_list_declaration: /(?i)IncludeList:/ _TAB? include_list_value include_name? NEWLINE?
+include_list_value: include_list_expr | include_raw
+normal_declaration: qualified_name ":" _TAB? expression NEWLINE?
+expression: format_spec? logical_expr format_spec? CPP_COMMENT?
+format_spec: /\{%[^}]*\}/
+logical_expr: or_expr
+or_expr: and_expr ("or" and_expr)*
+and_expr: not_expr ("and" not_expr)*
+not_expr: NOT not_expr -> not_expr
+        | comparison_expr
+comparison_expr: add_expr (comparison_op add_expr)*
+add_expr: mul_expr (add_op mul_expr)*
+mul_expr: pow_expr (mul_op pow_expr)*
+pow_expr: indexed_expr ("^" pow_expr)?
+mul_op: "*" | "/"
+add_op: "+" | "-"
+indexed_expr: primary ("[" index_value "]")?
+index_value: sign? index_term (add_op index_term)*
+sign: "+" | "-"
+index_term: NUMBER | identifier | reserved_identifier
+primary: "(" expression ")" | base_expr
+base_expr: function_call | qualified_name | NUMBER | date_literal | boolean_literal | stock_symbol | string_literal | field_list | path_name | RESERVED_IDENTIFIER | WATCHLIST_REF  
+DATE_LITERAL.1: /\d{8}|\d{4}\/\d{2}\/\d{2}|\d{4}-\d{2}-\d{2}|\d{4}\.\d{2}\.\d{2}|\d{2}-[A-Za-z]{3}-\d{2,4}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{1,2}-\d{1,2}-\d{2,4}|\d{1,2}\.\d{1,2}\.\d{2,4}/
+date_literal: DATE_LITERAL
+boolean_literal: /(?i)True/ | /(?i)False/
+reserved_identifier: RESERVED_IDENTIFIER
+path_name: reserved_word path_literal? | path_literal
+reserved_word: RESERVED_WORD
+field_list: field_item? ("," field_item? )*
+symbol_item: /[%$][\w.]+/
+comparison_op: "<" | ">" | "<=" | ">=" | "==" | "<>" | "!=" | "=" 
+function_call: (RESERVED_IDENTIFIER | qualified_name) "(" arguments? ")"
+arguments: expression ("," expression)*
+identifier: /(?i)(?!Data\b|Graphs\b|Import\b|Settings\b|Benchmark\b|Parameters\b|Strategy\b|Template\b|Include\b|Charts\b|Trades\b|Notes\b|Library\b|Namespace\b|OrderSettings\b|OrderInclude\b|Results\b|Scan\b|ScanInclude\b|ScanSettings\b|TestData\b|TestSettings\b|WalkForward\b|True\b|False\b)[a-zA-Z_][a-zA-Z0-9_]*/
+qualified_name: identifier ("." identifier)*
+string_literal: /"[^"]*"/
+stock_symbol: /[$%](?:[$&])?[A-Za-z0-9_.@]+/
+path_literal: PATH_LITERAL
+
+_TAB.5: /\t/
