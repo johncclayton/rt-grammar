@@ -2,37 +2,57 @@
 """
 RealTest Script Validator
 
-This script validates all .rts files in the samples/ directory using the realtest.lark grammar.
-It will report parsing errors to help iteratively refine the grammar.
+Validates each .rts file with (1) the realtest.lark grammar (Lark) and
+(2) RealTest.exe -parse when the executable is available. RealTest is silent
+on success (exit 0). On failure it returns a non-zero exit code; stdout/stderr
+are often empty (known RealTest limitation), so the exit code alone indicates
+a problem.
+
+If RealTest.exe is not found, only Lark runs (with a one-time notice), unless
+you pass --lark-only to skip the RealTest step explicitly.
 """
 
 import sys
 import json
+import os
+import subprocess
 from pathlib import Path
+from typing import List, Optional, Tuple
 from lark import Lark
-from lark.exceptions import ParseError, LexError, UnexpectedInput
+from lark.exceptions import (
+    LarkError,
+    LexError,
+    ParseError,
+    UnexpectedCharacters,
+    UnexpectedEOF,
+    UnexpectedInput,
+    UnexpectedToken,
+)
 import argparse
 
+DEFAULT_REALTEST_EXE = Path(r"C:\RealTest\RealTest.exe")
 
-def load_grammar(grammar_path_str="lark/realtest.lark"):
+
+def load_grammar(grammar_path_str="lark/realtest.lark", *, quiet: bool = False):
     """Load the Lark grammar from the specified path"""
     grammar_path = Path(grammar_path_str)
     if not grammar_path.exists():
         print(f"Error: Grammar file not found at {grammar_path}")
         sys.exit(1)
-    
+
     try:
-        with open(grammar_path, 'r', encoding='utf-8') as f:
+        with open(grammar_path, "r", encoding="utf-8") as f:
             grammar_content = f.read()
-        
-        parser = Lark(
+
+        lark_parser = Lark(
             grammar_content,
-            start='start',
-            parser='earley',
-            lexer='dynamic',
+            start="start",
+            parser="earley",
+            lexer="dynamic",
         )
-        print(f"[OK] Grammar loaded successfully from {grammar_path}")
-        return parser
+        if not quiet:
+            print(f"[OK] Grammar loaded successfully from {grammar_path}")
+        return lark_parser
     except Exception as e:
         print(f"Error loading grammar: {e}")
         sys.exit(1)
@@ -52,16 +72,92 @@ def find_rts_files(samples_dir: Path):
     return sorted(rts_files, key=lambda p: p.name.lower())
 
 
+def format_lark_parse_error(path: Path, content: str, exc: Exception) -> str:
+    """
+    Format a Lark parse/lex error with file path, line:column, and a caret
+    under the error position when Lark provides stream position.
+    """
+    path_s = str(path.resolve()) if path.exists() else str(path)
+
+    if isinstance(exc, UnexpectedCharacters):
+        return f"{path_s}:{exc.line}:{exc.column}:\n{exc}"
+
+    if isinstance(exc, UnexpectedToken):
+        loc = f"{path_s}:{exc.line}:{exc.column}:"
+        pos = exc.pos_in_stream
+        if isinstance(pos, int) and pos >= 0:
+            ctx = exc.get_context(content, span=80).rstrip("\n")
+            return f"{loc}\n{ctx}\n\n{exc}"
+        return f"{loc}\n{exc}"
+
+    if isinstance(exc, UnexpectedEOF):
+        lines = content.splitlines()
+        footer = str(exc)
+        if lines:
+            n = len(lines)
+            last = lines[-1]
+            num_w = len(str(n))
+            prefix = f"{n:>{num_w}} | "
+            caret_line = " " * len(prefix) + " " * len(last) + "^"
+            snippet = f"{prefix}{last}\n{caret_line} (end of input)"
+            return f"{path_s}: (unexpected end of input)\n{snippet}\n\n{footer}"
+        return f"{path_s}:\n{footer}"
+
+    if isinstance(exc, UnexpectedInput):
+        line = getattr(exc, "line", "?")
+        col = getattr(exc, "column", "?")
+        loc = f"{path_s}:{line}:{col}:"
+        pos = getattr(exc, "pos_in_stream", None)
+        if isinstance(pos, int) and pos >= 0:
+            ctx = exc.get_context(content, span=80).rstrip("\n")
+            return f"{loc}\n{ctx}\n\n{exc}"
+        return f"{loc}\n{exc}"
+
+    if isinstance(exc, (LexError, ParseError, LarkError)):
+        return f"{path_s}: Lark {type(exc).__name__}\n{exc}"
+
+    return f"{path_s}:\n{exc}"
+
+
 def validate_file(parser, file_path: Path):
-    """Validate a single .rts file"""
+    """Validate a single .rts file with Lark."""
     try:
         content = file_path.read_text(encoding='utf-8')
         parser.parse(content)
         return True, None
     except (ParseError, LexError, UnexpectedInput) as e:
-        return False, str(e)
+        return False, format_lark_parse_error(file_path, content, e)
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
+
+
+def realtest_parse(exe: Path, file_path: Path, timeout_sec: float = 300.0):
+    """
+    Run RealTest.exe -parse on file_path.
+    On success: exit code 0, typically no console output.
+    On failure: non-zero exit code; stderr/stdout may be empty (treat exit
+    code as authoritative). Returns (ok, error_message).
+    """
+    if not exe.is_file():
+        return False, f"RealTest executable not found or not a file: {exe}"
+    try:
+        completed = subprocess.run(
+            [str(exe), "-parse", str(file_path.resolve())],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_sec,
+        )
+        if completed.returncode == 0:
+            return True, None
+        out = (completed.stderr or "").strip() or (completed.stdout or "").strip()
+        detail = out if out else f"exit code {completed.returncode}"
+        return False, detail
+    except subprocess.TimeoutExpired:
+        return False, f"RealTest -parse timed out after {timeout_sec:g}s"
+    except OSError as e:
+        return False, f"Failed to run RealTest: {e}"
 
 
 def load_status_data(data_file: Path):
@@ -82,6 +178,24 @@ def save_status_data(data_file: Path, status_data):
             json.dump(status_data, f, indent=2)
     except Exception as e:
         print(f"Warning: Could not save {data_file}: {e}")
+
+
+def _files_word(n: int) -> str:
+    return "file" if n == 1 else "files"
+
+
+def _lark_status_line(total: int, failed: int) -> str:
+    if failed == 0:
+        return f"Lark: OK ({total} {_files_word(total)})"
+    return f"Lark: FAIL ({failed} of {total} {_files_word(total)})"
+
+
+def _realtest_status_line(total: int, failed: int, *, skipped: Optional[str]) -> str:
+    if skipped:
+        return f"RealTest -parse: skipped ({skipped})"
+    if failed == 0:
+        return f"RealTest -parse: OK ({total} {_files_word(total)})"
+    return f"RealTest -parse: FAIL ({failed} of {total} {_files_word(total)})"
 
 
 def main():
@@ -106,76 +220,101 @@ def main():
         default="samples",
         help="Path to samples directory (default: samples)"
     )
-    
+
+    parser.add_argument(
+        "--lark-only",
+        action="store_true",
+        help="Skip RealTest.exe -parse; validate with Lark grammar only.",
+    )
+
+    parser.add_argument(
+        "--realtest-exe",
+        type=str,
+        default=None,
+        help=(
+            f"Path to RealTest.exe (default: REALTEST_EXE env var, else {DEFAULT_REALTEST_EXE})"
+        ),
+    )
+
     args = parser.parse_args()
-    
-    # Header
-    print("RealTest Script Validator")
-    print("=" * 50)
-    
-    # Load grammar
-    lark_parser = load_grammar(args.grammar)
-    
+
+    realtest_exe = (
+        Path(args.realtest_exe)
+        if args.realtest_exe
+        else Path(os.environ.get("REALTEST_EXE", str(DEFAULT_REALTEST_EXE)))
+    )
+
+    run_realtest = (not args.lark_only) and realtest_exe.is_file()
+    rt_skip_reason = None
+    if args.lark_only:
+        rt_skip_reason = "--lark-only"
+    elif not realtest_exe.is_file():
+        rt_skip_reason = "RealTest.exe not found"
+
+    # Load grammar (no banner on success path)
+    lark_parser = load_grammar(args.grammar, quiet=True)
+
     # Determine what to validate
     if args.file:
-        # Single file mode
         file_path = Path(args.file)
         if not file_path.exists():
             print(f"Error: File not found: {file_path}")
             sys.exit(1)
-        
-        print(f"Found 1 file to validate: {file_path.name}")
         files_to_validate = [file_path]
         samples_dir = file_path.parent
     else:
-        # Multi-file mode (all samples)
         samples_dir = Path(args.samples)
         files_to_validate = find_rts_files(samples_dir)
-        print(f"Found {len(files_to_validate)} file(s) to validate")
-    
-    # Validate files
-    print("\nValidating files...")
-    print("-" * 50)
-    
+
+    total = len(files_to_validate)
     results = {}
-    for i, file_path in enumerate(files_to_validate, 1):
-        success, error = validate_file(lark_parser, file_path)
-        
-        status = "[PASS]" if success else "[FAIL]"
-        print(f"[{i:3d}/{len(files_to_validate)}] {file_path.name:40s} {status}")
-        
-        if not success and args.file:
-            # Show error details for single file
-            print(f"\nError details:\n{error}\n")
-        
+    lark_failures: List[Tuple[str, str]] = []
+    rt_failures: List[Tuple[str, str]] = []
+
+    for file_path in files_to_validate:
+        lark_ok, lark_err = validate_file(lark_parser, file_path)
+        if not lark_ok:
+            lark_failures.append((file_path.name, lark_err or ""))
+
+        rt_ok, rt_err = (True, None)
+        if run_realtest:
+            rt_ok, rt_err = realtest_parse(realtest_exe, file_path)
+            if not rt_ok:
+                rt_failures.append((file_path.name, rt_err or ""))
+
+        success = lark_ok and rt_ok
         results[file_path.name] = "pass" if success else "fail"
-    
-    # Summary
-    print("\n" + "=" * 50)
-    print("VALIDATION SUMMARY")
-    print("=" * 50)
-    
-    total = len(results)
-    passed = sum(1 for v in results.values() if v == "pass")
-    failed = total - passed
-    
-    print(f"Total files: {total}")
-    print(f"Successful: {passed} ({100.0 * passed / total:.1f}%)")
-    print(f"Failed: {failed} ({100.0 * failed / total:.1f}%)")
-    
-    # Save status if validating samples directory
+
+    lark_failed_count = len(lark_failures)
+    rt_failed_count = len(rt_failures)
+    overall_failed = sum(1 for v in results.values() if v == "fail")
+    all_ok = overall_failed == 0
+
+    # Save status if validating samples directory (silent)
     if not args.file:
-        data_file = samples_dir.parent / 'data.json'
+        data_file = samples_dir.parent / "data.json"
         save_status_data(data_file, results)
-        print(f"\nUpdated status written to {data_file.name}")
-    
-    # Exit code
-    if failed == 0:
-        print("\n[SUCCESS] All files parsed successfully!")
+
+    if all_ok:
+        print(_lark_status_line(total, 0))
+        if run_realtest:
+            print(_realtest_status_line(total, 0, skipped=None))
         sys.exit(0)
+
+    # Failure: status lines + details
+    print(_lark_status_line(total, lark_failed_count))
+    if run_realtest:
+        print(_realtest_status_line(total, rt_failed_count, skipped=None))
     else:
-        print(f"\n[FAIL] {failed} file(s) failed validation")
-        sys.exit(1)
+        print(_realtest_status_line(total, 0, skipped=rt_skip_reason))
+
+    print("---")
+    for name, err in lark_failures:
+        print(f"{name} — Lark:\n{err}\n")
+    for name, err in rt_failures:
+        print(f"{name} — RealTest -parse:\n{err}\n")
+
+    sys.exit(1)
 
 
 if __name__ == "__main__":

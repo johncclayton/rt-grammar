@@ -1,0 +1,90 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "RealTest",
+  "scopeName": "source.realtest.rts",
+  "patterns": [
+    { "include": "#strings" },
+    { "include": "#formatSpec" },
+    { "include": "#blockComment" },
+    { "include": "#lineComment" },
+    { "include": "#inlineBraceComment" },
+    { "include": "#sectionHeader" },
+    { "include": "#dates" },
+    { "include": "#numbers" },
+    { "include": "#watchlist" },
+    { "include": "#stockSymbol" },
+    { "include": "#reservedWord" },
+    { "include": "#keywords" },
+    { "include": "#declarationKey" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "strings": {
+      "name": "string.quoted.double.realtest",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.realtest",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "formatSpec": {
+      "name": "meta.format-spec.realtest",
+      "begin": "\\{%",
+      "end": "%\\}"
+    },
+    "blockComment": {
+      "name": "comment.block.realtest",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    "lineComment": {
+      "name": "comment.line.double-slash.realtest",
+      "match": "//.*"
+    },
+    "inlineBraceComment": {
+      "name": "comment.block.realtest.brace",
+      "match": "\\{(?!%)[^}]*\\}"
+    },
+    "sectionHeader": {
+      "name": "entity.name.section.realtest",
+      "match": "^\\s*(Data|Graphs|Import|Settings|Benchmark|Parameters|Strategy|Template|Include|Charts|Trades|Notes|Library|Namespace|OrderSettings|OrderInclude|Results|Scan|ScanInclude|ScanSettings|TestSettings|TestData|Combined|WalkForward)\\s*:"
+    },
+    "dates": {
+      "name": "constant.numeric.date.realtest",
+      "match": "(?<!\\w)(?:\\d{8}|\\d{4}/\\d{2}/\\d{2}|\\d{4}-\\d{2}-\\d{2}|\\d{4}\\.\\d{2}\\.\\d{2}|\\d{2}-[A-Za-z]{3}-\\d{2,4}|\\d{1,2}/\\d{1,2}/\\d{2,4}|\\d{1,2}-\\d{1,2}-\\d{2,4}|\\d{1,2}\\.\\d{1,2}\\.\\d{2,4})(?!\\w)"
+    },
+    "numbers": {
+      "name": "constant.numeric.realtest",
+      "match": "(?<!\\w)[-+]?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?(?!\\w)"
+    },
+    "watchlist": {
+      "name": "variable.other.watchlist.realtest",
+      "match": "&[-A-Za-z0-9_.@]+"
+    },
+    "stockSymbol": {
+      "name": "variable.other.symbol.realtest",
+      "match": "[$%](?:[$&])?[A-Za-z0-9_.@]+"
+    },
+    "reservedWord": {
+      "name": "support.constant.reserved-word.realtest",
+      "match": "(?i)\\?[A-Za-z]+\\??"
+    },
+    "keywords": {
+      "name": "keyword.other.realtest",
+      "match": "(?i)\\b(AccountSize|AccountType|AllowSameName|AlwaysImport|BarSize|CashIntPct|Currency|DataFile|DateDisplay|DateInput|DateSym|DaysPerYear|Dividends|EndDate|EndOfTestExits|ExchangeMap|Filter|HolidayList|KeepTrades|LTGains|LegacyMode|MarginIntPct|NumBars|NumDays|OptKeepBest|OptKeepByDate|OptScoreCol|OptSortResults|OptTestInterval|OptTestLength|OptTimeUnit|OptWalkForward|OptimizeMode|OptimizeSettings|OrderClerkFolder|OrdersComment|OrdersFile|OrdersLiveData|OrdersMode|OrdersNetLiq|OrdersTemplate|RandomSeed|ReportContent|ReportsFolder|ResultsFile|RiskFreeRateSym|STGains|SaveChartsTo|SavePositionsAs|SaveScanAs|SaveStatsAs|SaveTestListAs|SaveTradesAs|SaveTradesType|ScanNoDefCols|ScanNoHeader|ScanNoWindow|SkipTestIf|StartDate|SymChangeList|TaxOwed|TestName|TestOutput|TestScan|TestScanAllDates|UseAvailableBars|Adjustment|CIIFamily|CIILevel|CSVDateFmt|CSVDelim|CSVFields|CSVFile|CSVNumFmt|Classification|Constituency|DataPath|DataSource|EventListFile|ExcludeIf|ExcludeList|Fundamentals|IncludeList|KeepAdjusted|KeepNonIncluded|KeepRedundant|LogFile|NoWeekends|PadAlignSym|Padding|RemoveLatest|SaveAs|SymInfoFile|Update|Allocation|AllowMissingBar|AllowNoVolume|Ambiguity|CalendarSym|CashInOut|CashList|Category|CloseSlip|Commission|Compounded|DebugEntry|DebugExit|DebugTargetStop|DynamicSizing|EntryLimit|EntryScore|EntrySetup|EntrySkip|EntryStop|EntryTime|EntryTradeValue|ExitLimit|ExitLimitQty|ExitLimitTime|ExitQty|ExitRule|ExitScore|ExitStop|ExitStopQty|ExitStopTime|ExitTime|ExitTradeValue|FeesInOut|FeesList|FuturesMargin|GreedyScoring|IgnoreDividends|LimitExtra|LimitSlip|MarkToMarket|MaxCatExp|MaxCatInv|MaxEntries|MaxExposure|MaxInvested|MaxLongExp|MaxLongInv|MaxNetExp|MaxNetInv|MaxNewExp|MaxNewInv|MaxNewPos|MaxPerTurn|MaxPositions|MaxSameCat|MaxSameSym|MaxSetups|MaxShortExp|MaxShortInv|MaxSymExp|MaxSymInv|MinFreeCash|MinNetExp|MinNetInv|OpenSlip|OrderNote|OrdersMktAsLmtPct|PriceRound|QtyFinal|QtyPrice|QtyRound|QtyType|Quantity|Reduce|RollCost|SetupScore|SetupSkip|Side|Slippage|StartPercent|StopSlip|StrategyScore|TLAdjusted|TLDateFmt|TLDelim|TLFields|TLIgnoreRules|TLNumFmt|TLStratName|TLTimeShift|Tracker|TradeList|Using|Symbol|Name|BarNum|InfoID|InfoExpiry|InfoFloat|InfoGICS|InfoMargin|InfoTRBC|FilterNum|InList|ListNum|PointValue|InfoShares|TickSize|and|or|not|True|False|from|to|step|def|Latest|Earliest|none)\\b"
+    },
+    "declarationKey": {
+      "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\s*:",
+      "captures": {
+        "1": { "name": "variable.other.property.realtest" }
+      }
+    },
+    "operators": {
+      "name": "keyword.operator.realtest",
+      "match": "==|<>|!=|<=|>=|[-+*/^(),]|(?<![<>])=(?!=)|(?<!=)<(?!=)|(?<!=)>(?!=)"
+    }
+  }
+}

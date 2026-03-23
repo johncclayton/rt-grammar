@@ -11,13 +11,13 @@ Validate RealTest `.rts` script files using the RealTest Lark grammar.
 
 ## Requirements
 
-**Python 3.7+** with one package:
+**Python 3.7+** with Lark (see [`requirements.txt`](requirements.txt)).
+
+Setup steps (**uv** recommended; **venv + pip** as alternative) are in **[`QUICKSTART.md`](QUICKSTART.md)**.
 
 ```bash
-pip install lark
+uv run --with lark python validate_rts.py --file example_strategy.rts
 ```
-
-That's it! No other dependencies.
 
 ## Quick Start
 
@@ -48,7 +48,11 @@ Options:
   --file FILE          Validate specific .rts file
   --grammar GRAMMAR    Path to grammar file (default: realtest.lark)
   --samples SAMPLES    Path to samples directory (default: samples)
+  --lark-only          Skip RealTest.exe -parse (Lark grammar only)
+  --realtest-exe PATH  Path to RealTest.exe (else REALTEST_EXE or default)
 ```
+
+By default, each file is checked with **Lark** and, when `RealTest.exe` is available, **RealTest -parse**. If the executable is missing, only Lark runs. Use `--lark-only` to force grammar-only validation. On **success**, output is two lines when both checks run (`Lark: OK …` and `RealTest -parse: OK …`), or one line if only Lark runs.
 
 ### Examples
 
@@ -56,24 +60,20 @@ Options:
 ```bash
 python validate_rts.py --file my_strategy.rts
 
-# Output:
-# [OK] Grammar loaded successfully
-# Found 1 file to validate: my_strategy.rts
-# [  1/1] my_strategy.rts                          [PASS]
-# [SUCCESS] All files parsed successfully!
+# Output (when RealTest.exe is available):
+# Lark: OK (1 file)
+# RealTest -parse: OK (1 file)
 ```
 
 **Validate directory:**
 ```bash
 python validate_rts.py --samples my_strategies/
 
-# Output:
-# [OK] Grammar loaded successfully
-# Found 25 files to validate
-# [  1/25] strategy1.rts                          [PASS]
-# [  2/25] strategy2.rts                          [PASS]
-# ...
-# Total: 25, Successful: 23 (92.0%), Failed: 2 (8.0%)
+# Output when all pass (with RealTest.exe):
+# Lark: OK (25 files)
+# RealTest -parse: OK (25 files)
+#
+# On failure, the same two status lines include FAIL counts, then "---" and per-file errors.
 ```
 
 **With custom grammar:**
@@ -86,15 +86,23 @@ python validate_rts.py \
 ## What It Validates
 
 The validator checks that your RealTest script:
+
+**Lark (always):**
+
 - ✅ Has valid syntax according to the grammar
 - ✅ All sections (Import, Settings, Data, Strategy, etc.) are properly formatted
 - ✅ Expressions, identifiers, and operators follow RealTest rules
 - ✅ Comments are correctly placed
 - ✅ String literals, numbers, and symbols are valid
 
+**RealTest -parse (when `RealTest.exe` is found, unless `--lark-only`):**
+
+- ✅ The installed RealTest parser accepts the script (same as running `RealTest.exe -parse` on the file)
+- ℹ️ RealTest signals failure with a **non-zero exit code**; it often prints **nothing** to stdout/stderr (known limitation). The validator treats the exit code as authoritative.
+
 ## What It Doesn't Check
 
-This is **grammar validation only**. It doesn't check:
+Neither Lark nor RealTest -parse checks:
 - ❌ Whether variable names conflict with functions (use semantic_validator.py)
 - ❌ Whether data files exist
 - ❌ Whether strategies make logical sense
@@ -116,6 +124,8 @@ python validate_rts.py --file strategies/my_strategy.rts || exit 1
 # Validate all strategies
 python validate_rts.py --samples strategies/ || exit 1
 ```
+
+On runners without RealTest installed, add **`--lark-only`** so the job does not depend on `RealTest.exe`.
 
 ## Grammar Details
 

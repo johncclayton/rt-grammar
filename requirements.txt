@@ -1,0 +1,3 @@
+# Runtime dependencies for validate_rts.py and the Lark grammar.
+# Install: pip install -r requirements.txt
+lark>=1.1.9,<2

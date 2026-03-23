@@ -1,0 +1,51 @@
+{
+  "name": "realtest-rts",
+  "displayName": "RealTest Script (.rts)",
+  "description": "Syntax highlighting for RealTest .rts strategy scripts (aligned with rt-grammar realtest.lark).",
+  "version": "0.1.0",
+  "publisher": "johncclayton",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/johncclayton/rt-grammar.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "realtest",
+    "rts",
+    "trading"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "realtest",
+        "aliases": [
+          "RealTest",
+          "realtest"
+        ],
+        "extensions": [
+          ".rts"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "realtest",
+        "scopeName": "source.realtest.rts",
+        "path": "./syntaxes/rts.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.2"
+  }
+}

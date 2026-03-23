@@ -1,0 +1,44 @@
+name: VS Code extension (VSIX)
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: vscode-rts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: vscode-rts/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm install
+
+      - name: Package VSIX
+        run: npx vsce package --out "${{ github.workspace }}/realtest-rts.vsix"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: realtest-rts-vsix
+          path: realtest-rts.vsix
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" "${{ github.workspace }}/realtest-rts.vsix" --clobber
+        working-directory: ${{ github.workspace }}

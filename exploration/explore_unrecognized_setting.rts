@@ -1,0 +1,27 @@
+Import:
+DataSource: CSV
+
+CSVFields: Date, Symbol, Open, High, Low, Close, Volume, Extra
+
+CSVFile: E:\realtest-strategies\intraday\QQQ_10min_realtest.csv
+
+StartDate: 01/01/1901
+
+SaveAs: QQQ_10min.rtd
+
+Settings:
+DataFile: QQQ_10min.rtd
+
+StartDate: 01/01/1901
+
+EndDate: Latest
+
+BarSize: Daily
+
+AccountSize: 100000
+
+MaxPositions: 1
+
+PosSizeModel: FixedValue
+
+PosSizeValue: 100000
