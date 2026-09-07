@@ -379,6 +379,42 @@ Shell out for bar-level output. **Why rejected:** not portable to Linux CI; opaq
 
 ---
 
+## Decisions recorded
+
+| # | Decision | Status |
+|---|----------|--------|
+| **Q1** | Bar values from RealTest export (inject/wrap RTS — mechanism TBD; likely Scan + `SaveScanAs`, not aggregate `Results:`) | **In principle yes** — awaiting sample export |
+| **Q2** | v1 strategy keywords: `EntrySetup` + `ExitRule` only; more elements later | **Locked** |
+| **Q6** | **Deep decomposition** — full `and`/`or`/`not`/comparison tree in the graph model and export plan | **Locked** |
+| **Q6 display** | How much of the tree is shown initially (collapse, focus mode, defaults) | **Separate concern** — UI phasing, not model depth |
+
+### Model depth vs display depth (Q6)
+
+These are intentionally decoupled:
+
+| Layer | Requirement |
+|-------|-------------|
+| **Graph model** | Always **deep** — every compound operator and comparison is a `CriterionNode` with a stable `series_key` |
+| **Export plan** | Lists **all** nodes (named `Data:` items + synthetic keys for anonymous sub-expressions) |
+| **API** | Returns the **full** pruned subgraph for a trade+phase; clients choose what to render |
+| **UI (phased)** | May default to collapsed tree (root + named refs visible; anonymous `and`/`cmp` nodes expandable) without omitting data |
+
+Example — inline entry `RSIV < RSIThreshold and C > MA50`:
+
+```
+EntrySetup (and)           series_key: strategy:MeanReversion:EntrySetup
+├── cmp_0 (RSIV < RSIThreshold)   series_key: cv:MeanReversion:EntrySetup:cmp:0
+│   ├── RSIV                      series_key: data:RSIV
+│   └── RSIThreshold              series_key: param:RSIThreshold
+└── cmp_1 (C > MA50)              series_key: cv:MeanReversion:EntrySetup:cmp:1
+    ├── C                         series_key: builtin:C
+    └── MA50                      series_key: data:MA50
+```
+
+The visualizer **always knows** this tree exists; the first UI might only highlight `EntrySetup` + `Oversold`/`AboveTrend` when those are named `Data:` aliases — but nothing prevents drilling into `cmp_0` immediately once export columns exist.
+
+---
+
 ## Open questions — decisions needed
 
 Please answer these before implementation starts. Each blocks or shapes a slice.
@@ -397,15 +433,7 @@ How will you produce per-bar values for `Data:` items and strategy roots?
 
 ### Q2 — Entry/exit scope
 
-Which strategy elements should v1 visualize?
-
-| Tier | Elements |
-|------|----------|
-| **Minimum** | `EntrySetup`, `ExitRule` |
-| **Recommended** | + `EntrySkip`, `ExitLimit`, `ExitStop` |
-| **Full** | All formula-valued strategy keywords |
-
-**Question:** Minimum or recommended tier for v1?
+**Resolved:** v1 roots are `EntrySetup` and `ExitRule` only. Additional strategy elements (`EntrySkip`, stops, limits, …) are follow-on work; the graph model already supports extra roots.
 
 ### Q3 — Trade list source
 
@@ -437,12 +465,7 @@ Bars shown before entry / after exit:
 
 ### Q6 — Sub-expression decomposition depth
 
-| Depth | UI |
-|-------|-----|
-| Top-level only | `EntrySetup` boolean + named `Data:` items |
-| Full tree | every `and`/`or`/`not` and comparison as a node |
-
-**Question:** Full tree is the stated goal ("compound criteria convergence"). Confirm full decomposition is required for v1?
+**Resolved:** Deep model always. Display phasing is a UI-only concern (see [Decisions recorded](#decisions-recorded)).
 
 ### Q7 — Template inheritance
 
