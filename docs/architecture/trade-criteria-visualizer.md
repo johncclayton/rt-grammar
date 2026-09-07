@@ -339,9 +339,9 @@ Per symbol: `{series_dir}/{SYMBOL}.csv`
 | `Date` | yes |
 | `{series_key}` | one per node in ExportPlan |
 
-Optional: `export_manifest.yaml` for date format and file mapping.
+Optional: `export_manifest.yaml` for date format, file mapping, and `backend: results | scan`.
 
-RealTest produces values via **companion snippet** from `plan` (adds `Data:` / `StratData:` debug columns + `#DataValueFile` export). Python never recomputes them.
+RealTest produces values via **companion snippet** from `plan`. Two snippet variants (Results-first, Scan-fallback); Python never recomputes formulas. Final variant chosen after Windows experiments.
 
 ---
 
@@ -383,10 +383,24 @@ Shell out for bar-level output. **Why rejected:** not portable to Linux CI; opaq
 
 | # | Decision | Status |
 |---|----------|--------|
-| **Q1** | Bar values from RealTest export (inject/wrap RTS — mechanism TBD; likely Scan + `SaveScanAs`, not aggregate `Results:`) | **In principle yes** — awaiting sample export |
+| **Q1** | Per-bar values come from **RealTest export** (wrapped/injected RTS). Mechanism: **`Results:` preferred**, **`Scan:` + `SaveScanAs` fallback**. Exact workflow TBD on Windows experiments. | **Locked (assumed feasible)** |
 | **Q2** | v1 strategy keywords: `EntrySetup` + `ExitRule` only; more elements later | **Locked** |
 | **Q6** | **Deep decomposition** — full `and`/`or`/`not`/comparison tree in the graph model and export plan | **Locked** |
 | **Q6 display** | How much of the tree is shown initially (collapse, focus mode, defaults) | **Separate concern** — UI phasing, not model depth |
+
+### Q1 — export backend (pluggable, experiments later)
+
+Python treats bar data as **opaque CSV** keyed by `series_key`. How RealTest produces that CSV is behind an export-backend boundary:
+
+| Backend | When | `plan` output |
+|---------|------|----------------|
+| **`results`** (preferred) | Inject/wrap RTS with a `Results:` (or related) section that emits per-bar formula columns | Companion snippet variant A |
+| **`scan`** (fallback) | `Scan:` columns mirror `ExportPlan` + `SaveScanAs:` in `Settings` | Companion snippet variant B |
+| **`fixture`** | Dev/CI on Linux without RealTest | Hand-crafted CSV under `tests/fixtures/` |
+
+**Phase 0 does not block on Windows.** Implement graph + `plan` + `CsvBarSeriesStore` against fixtures; companion snippets ship as **both** variants with a `backend: results | scan` flag. Lock the default once experiments confirm which path works.
+
+**Experiment checklist (Windows):** for `example_strategy.rts`, can export columns `Date`, `RSIV`, `Oversold`, `AboveTrend`, `EntrySetup` per symbol per bar? Record: section used, `Save*As` setting, file layout (one file vs per-symbol), date format.
 
 ### Model depth vs display depth (Q6)
 
@@ -419,17 +433,9 @@ The visualizer **always knows** this tree exists; the first UI might only highli
 
 Please answer these before implementation starts. Each blocks or shapes a slice.
 
-### Q1 — Bar data source (highest priority)
+### Q1 — Bar data source
 
-How will you produce per-bar values for `Data:` items and strategy roots?
-
-| Option | Implication |
-|--------|-------------|
-| **A. RealTest export** (recommended) | Implement `plan` + companion snippet; you run RealTest once per backtest |
-| **B. Hand-crafted fixture CSV** | Dev/CI only; proves UI without RealTest |
-| **C. Minimal Python evaluator** | Implement `RSI`, `MA`, `and`/`or` over OHLCV — weeks of semantic drift risk |
-
-**Question:** Can you export per-bar `Data:` column values from RealTest today (Scan, `#DataValueFile`, custom report)? If yes, please share a sample export or describe the workflow.
+**Resolved:** Assume RealTest can export per-bar series. Preferred path: injected/wrapped **`Results:`**; fallback: **`Scan:`** + `SaveScanAs`. Dev/CI uses fixture CSV until Windows experiments lock the companion-snippet shape.
 
 ### Q2 — Entry/exit scope
 
@@ -490,15 +496,19 @@ Strategies with `Using: base` (see `strategy_elements.rts`).
 
 ## Phased delivery
 
-### Phase 0 — Spike (prove export contract + parser)
+### Phase 0 — Spike (parser + export plan + fixture CSV)
 
-- [ ] `graph/build.py`: parse `example_strategy.rts` → `CriteriaGraph` for `EntrySetup`/`ExitRule` + `Data:` refs
-- [ ] `export/plan.py`: emit `ExportPlan` + companion snippet
-- [ ] `export/store.py`: load hand-crafted fixture CSV
-- [ ] `cli check`: print criteria values at trade entry bar
+**Unblocked** — Q1 assumed feasible; no RealTest required for this phase.
+
+- [ ] `graph/build.py`: parse `example_strategy.rts` → deep `CriteriaGraph` for `EntrySetup`/`ExitRule`
+- [ ] `export/plan.py`: emit `ExportPlan` + companion snippets (**results** and **scan** variants)
+- [ ] `export/store.py`: load hand-crafted fixture CSV matching `ExportPlan` keys
+- [ ] `cli plan` and `cli check`: validate graph + fixture alignment
 - [ ] No web UI
 
-**Exit:** `python -m criteria_viz check --rts example_strategy.rts --trades ... --series ...` exits 0.
+**Exit:** `python -m criteria_viz check --rts example_strategy.rts --trades ... --series ...` exits 0 on Linux CI.
+
+**Parallel (Windows):** run experiments; update `plan` default backend + document winning snippet in `criteria_viz/docs/realtest-export.md`.
 
 ### Phase 1 — MVP (your stated v1)
 
@@ -522,9 +532,11 @@ Strategies with `Using: base` (see `strategy_elements.rts`).
 
 ## Next implementation step
 
-After you answer **Q1** and **Q6**, start Phase 0:
+**Phase 0 is unblocked.** Start with:
 
-> Implement `graph/build.py` + `export/plan.py` + `cli plan` for `example_strategy.rts`, with a unit test that asserts the graph contains nodes `Oversold`, `AboveTrend`, and root `EntrySetup` with correct `deps`.
+> `graph/build.py` + `export/plan.py` (deep tree, dual snippet variants) + fixture CSV + `cli check` for `example_strategy.rts`.
+
+Windows experiments refine which snippet variant becomes default; they do not block the parser or fixture-based timeline path.
 
 ---
 
