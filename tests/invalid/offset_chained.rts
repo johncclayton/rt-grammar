@@ -1,0 +1,6 @@
+// RealTest: expected an operator here -- one offset per atom;
+// (MA(C,20)[1])[1] would be accepted
+Settings:
+	AccountSize:	100000
+Data:
+	zz:	MA(C, 20)[1][1]

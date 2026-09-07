@@ -1,0 +1,6 @@
+// RealTest: unrecognized strategy side
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+	Side:	Sideways

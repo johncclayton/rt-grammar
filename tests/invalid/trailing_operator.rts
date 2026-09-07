@@ -1,0 +1,10 @@
+// RealTest: syntax structure error
+Settings:
+	AccountSize:	100000
+Data:
+	zz:	C >
+	yy:	1
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1

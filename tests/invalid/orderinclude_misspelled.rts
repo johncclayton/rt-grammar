@@ -1,0 +1,4 @@
+// RealTest: unrecognized setting name -- the section is OrdersInclude
+Settings:
+	AccountSize:	100000
+OrderInclude:	stub.rts

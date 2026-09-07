@@ -1,0 +1,6 @@
+// RealTest: parameter value definition syntax error -- values are literals
+Parameters:
+	p:	10
+	q:	p * 2
+Settings:
+	AccountSize:	100000

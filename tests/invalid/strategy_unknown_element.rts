@@ -1,0 +1,6 @@
+// RealTest: unrecognized strategy element name
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+	BogusElement:	5

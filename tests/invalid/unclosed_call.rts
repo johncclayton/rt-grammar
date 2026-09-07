@@ -1,0 +1,6 @@
+// RealTest: incomplete syntax
+Settings:
+	AccountSize:	100000
+Strategy: s
+	Quantity:	Extern(@s,
+	EntrySetup:	1

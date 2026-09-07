@@ -1,0 +1,9 @@
+// RealTest: reserved syntax elements cannot be used as item names --
+// Charts: has no Filter:
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+Charts:
+	Ma:	MA(C,20)
+	Filter:	1

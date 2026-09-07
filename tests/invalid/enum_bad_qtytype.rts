@@ -1,0 +1,7 @@
+// RealTest: unrecognized quantity type -- Contracts is not a QtyType;
+// one contract per trade is QtyType: Shares with Quantity: 1
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+	QtyType:	Contracts

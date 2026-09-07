@@ -1,0 +1,5 @@
+// RealTest: unrecognized import element
+Import:
+	DataSource:	Yahoo
+	IncludeList:	SPY
+	BogusImport:	1

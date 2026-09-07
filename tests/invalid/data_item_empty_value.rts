@@ -1,0 +1,11 @@
+// RealTest: formula is empty -- a Data / Library / column item needs a
+// value, unlike a strategy element, which may be left blank
+Settings:
+	AccountSize:	100000
+Data:
+	empty:	
+	zz:	C
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1

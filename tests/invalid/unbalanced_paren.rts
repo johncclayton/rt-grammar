@@ -1,0 +1,5 @@
+// RealTest: syntax error in the formula
+Settings:
+	AccountSize:	100000
+Data:
+	zz:	MA(C, 20

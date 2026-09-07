@@ -1,0 +1,5 @@
+// RealTest: expected an operator here -- && is documented but not accepted
+Settings:
+	AccountSize:	100000
+Data:
+	zz:	(C > 1) && (H > 1)

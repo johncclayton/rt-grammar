@@ -1,0 +1,7 @@
+// RealTest: this strategy element is not supported in Combined
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+Combined:
+	Using:	s

@@ -1,0 +1,4 @@
+// RealTest: unrecognized import data source name
+Import:
+	DataSource:	IQFeed
+	IncludeList:	SPY

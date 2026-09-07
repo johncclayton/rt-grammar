@@ -1,0 +1,5 @@
+// RealTest: invalid date format -- Earliest pairs with StartDate,
+// Latest with EndDate
+Settings:
+	AccountSize:	100000
+	StartDate:	Latest

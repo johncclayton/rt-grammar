@@ -1,0 +1,199 @@
+Notes:
+	Exercises the formula language: every operator, offsets, function-call
+	shapes, symbol / strategy / group / bar-size references, literals and the
+	comment forms. A section name inside Notes has to be quoted: "Settings:".
+
+Settings:
+	DataFile:	feature_tests.rtd
+	AccountSize:	100000
+
+Parameters:
+	nLen:	20
+	nRange:	from 5 to 50 step 5 {x}
+	nRangeDef:	from 5 to 50 step 5 def 20 {x}
+	nRangeNoStep:	from 10 to 100 def 50
+	nList:	10, 20, 50, 100
+	nListDef:	10, 20, 50, 100 def 50
+	nNeg:	from -3 to 3 step 1
+	nFloat:	0.75
+
+Data:
+	// --- arithmetic, comparison, logical, bitwise
+	t_arith:		1 + 2 - 3 * 4 / 5 ^ 2
+	t_unaryMinus:	-C + +H
+	t_modWord:	BarNum MOD 5
+	t_modSign:	BarNum % 5
+	t_cmpAll:		(C < 1) + (C <= 1) + (C > 1) + (C >= 1) + (C = 1) + (C == 1) + (C <> 1) + (C != 1)
+	t_logicWords:	C > O and H > C or not (L < O)
+	t_logicPipes:	(C > O) || (H > C)
+	t_logicBang:	!(L < O)
+	t_bitwise:	(5 BITAND 3) + (5 BITOR 3) + (5 BITXOR 3) + (5 LSHIFT 2) + (5 RSHIFT 1) + BITNOT 5
+
+	// --- literals
+	t_numInt:		42
+	t_numFloat:	3.14159
+	t_numLeadDot:	.5
+	t_numSci:		1.5e-3
+	t_numSciPlus:	2E+4
+	t_strEq:		IF(?Symbol = "SPY", 1, 0)
+
+	// --- offsets, including offset-after-lookback and a look-ahead offset
+	t_prevClose:	C[1]
+	t_offsetExpr:	LLV(L, 8)[1]
+	t_offsetParen:	(C + H)[2]
+	t_offsetVar:	C[BarNum]
+	t_offsetChain:	(MA(C, 20)[1])[1]
+	t_offsetAhead:	EndOfWeek[-2]
+
+	// --- bar, date and symbol built-ins
+	t_bars:		O + H + L + C + V + R + TR + Open + High + Low + Close + Volume + Range + TrueRange
+	t_nextOpn:	NextOpen
+	t_extras:		Dividend + Split + Extra + BarNum + BarsLeft + FxRatio
+	t_dates:		BarDate + BarStart + Day + Week + Month + Year + DayOfWeek + DayOfYear
+	t_periodEnds:	EndOfWeek + EndOfMonth + EndOfQuarter + EndOfYear
+	t_symProps:	InfoShares + InfoFloat + InfoGICS + InfoTRBC + InfoID + InfoDelist + InfoExpiry + InfoMargin
+	t_futProps:	PointValue + TickSize
+	t_listProps:	ListNum + InList("etfs") + InList(1)
+	t_membership:	InSPX + InNDX + InRUI + InRUT + InOEX
+	t_adjusted:	Adjusted(C)
+
+	// --- indicator and rolling functions
+	t_movAvgs:	MA(C,10) + Avg(C,10) + EMA(C,10) + XAvg(C,10) + WMA(C,10) + WAvg(C,10) + HMA(C,10) + HAvg(C,10)
+	t_movAvgs2:	DEMA(C,10) + TEMA(C,10) + VWMA(C,10) + KAMA(C,10,2,30) + AEMA(C,0.1) + AESD(C,0.1) + ESD(C,10)
+	t_extremes:	Highest(C,10) + HHV(C,10) + Lowest(C,10) + LLV(C,10)
+	t_sums:		Sum(C,10) + Product(C,10) + SumSQ(C,10)
+	t_stats:		StdDev(C,10) + Skewness(C,10) + Kurtosis(C,10) + Median(C,10)
+	t_ranks:		Rank(C,10) + PercentRank(C,10) + RankN(2,C,10) + PercentRankN(50,C,10)
+	t_roc:		ROC(C,10) + PctChg(C,10)
+	t_regress:	LinReg(C,10) + Slope(C,10) + YInt(C,10) + StdErr(C,10)
+	t_correls:	Correl(C,V,10) + Spearman(C,V,10) + Hurst(C,100,20)
+	t_corrGroup:	CorrelAvg(InSPX,C,20) + CorrelMed(InSPX,C,20) + CorrelMin(InSPX,C,20) + CorrelMax(InSPX,C,20)
+	t_corrSyms:	CorrelMinSym(InSPX,C,20) + CorrelMaxSym(InSPX,C,20)
+	t_since:		SinceHigh(C,10) + SinceLow(C,10) + SinceTrue(C > O) + SinceTrue(C > O, 50)
+	t_counts:		CountTrue(C > O, 20) + TrueInRow(C > O)
+	t_whenTrue:	WhenTrue(EndOfMonth, C) + WhenTrue(EndOfMonth, C, 60, 2)
+	t_sumSince:	SumSince(EndOfMonth, V) + UntilTrue(EndOfMonth)
+	t_bollF:		BBTopF(C,20,2) + BBBotF(C,20,2) + BBWidthF(C,20,2) + BBPctF(C,20,2) + BBTrendF(C,20,50,2)
+	t_zigzag:		Peak(C,5) + PeakBars(C,5) + Trough(C,5) + TroughBars(C,5) + Peak(C,5,2)
+	t_sequence:	Sequence(10, C > O, H > H[1], V > V[1])
+	t_fnForms:	RsiF(C-O, 14) + SarF(C) + SarF(C, 0.02, 0.2, 100)
+	t_ehlers:		EhlersHP(C,20) + EhlersSS(C,20) + EhlersUS(C,20) + EhlersBP(C,20,0.3)
+	t_barInd:		ATR(14) + RSI(2) + RRSI(14,70) + CRSI(3,2,100) + ADX(7) + PDI(7) + MDI(7)
+	t_barInd2:	HVOL(20) + HVOL(20,252) + STOC(14,3) + MACD(12,26) + MACDS(12,26,9) + MACDH(12,26,9)
+	t_barInd3:	CCI(20) + OBV(10) + SigSpike(20) + SAR() + SAR(0.02,0.2) + SuperTrend(10,3)
+	t_bands:		BBTop(20,2) + BBBot(20,2) + BBWidth(20,2) + BBPct(20,2) + BBTrend(20,50,2) + KBTop(20,2) + KBBot(20,2)
+	t_jdsar:		JDSAR(1, 0.02, 0.2, 100, 0)
+
+	// --- general functions
+	t_branch:		IF(C > O, 1, 0) + IIF(C > O, 1, 0)
+	t_pick:		Select(C > O, 1, C < O, -1) + Switch(Month, 1, 10, 12, 20)
+	t_sets:		InSet(Month, 1, 4, 7, 10)
+	t_minmax:		Max(C,O,H) + Min(C,O,L) + MaxN(2,C,O,H) + MinN(2,C,O,L)
+	t_maths:		Abs(-1) + Sqr(4) + Log(C) + Exp(1) + Sign(C - O)
+	t_rounding:	Round(C) + Round(C, 0.05) + Round(C, 0.05, 1) + Bound(C, 1, 100)
+	t_nanFns:		NoNan(C) + NoNan(C, 0) + IsNaN(C) + SkipNans(MA(C, 10))
+	t_crossing:	Cross(MA(C,10), MA(C,50))
+	t_dateFns:	Date(2020,1,2) + DateYear(BarDate) + DateMonth(BarDate) + DateDay(BarDate)
+	t_dateFns2:	Days(BarDate[10], BarDate) + Days(BarDate[10], BarDate, 1) + DateBars(20200102)
+	t_nthOf:		NthOfMonth(5, 3) + NthOfMonth(5, 3, 1)
+	t_events:		Event(2) + Event("EarnEPS") + Event("EarnEPS", 1) + UntilEvent("EarnEPS")
+	t_lookupItem:	Item("nLen") + Item("stop{#}", 1) + Item("{?}_wt", ?Symbol)
+	t_symNum:		SymNum(?Symbol)
+	t_trig:		Cosine(45) + Sine(45) + Tangent(45) + ArcCos(0.5) + ArcSin(0.5) + ArcTan(1)
+	t_hyper:		CosH(1) + SinH(1) + TanH(1)
+	t_distrib:	CDF(1) + ICDF(0.5) + Logit(0.5) + Rescale(C, 0, 100, 0, 1) + Rescale(C, 0, 100, 0, 1, 1)
+	t_missing:	MissingBars() + MostRecent(Extern(~Daily, ATR(14)))
+	t_strFns:		GetField(?Symbol, ".", 1) + ToNum(?Symbol) + ToNum(?Symbol, 1) + ToDate(?LocalTime)
+	t_fmt:		Format("alloc={##} exp={%}", 100000, 0.855)
+	t_fmtDate:	FormatDate(BarDate, "yyyy-mm-dd")
+	t_typed:		DataType(C, 1) + TargetPrice(MA(C,20), 100) + TargetPrice(MA(C,20), 100, 50)
+	t_assertion:	Assert(C > 0, "close must be positive")
+	t_debugging:	DebugEval(BarNum = 1, C)
+	t_strCase:	ToUpper(?Symbol) + ToLower(?Symbol)
+	t_funBars:	FunBar
+
+	// --- cross references
+	t_externSym:	Extern($SPY, C > MA(C, 200))
+	t_externIdx:	Extern($$SPX, C)
+	t_externRate:	Extern($%3MTCM, C)
+	t_externFut:	Extern($&ES, C)
+	t_externCalc:	Extern(SymNum(?Symbol), C)
+	t_externCII:	Extern(&cii, C)
+	t_externCIIn:	Extern(&99, C)
+	t_externCIIneg:	Extern(&-1, C)
+	t_externWeekly:	Extern(~Weekly, ROC(C, 5))
+	t_externMonthly:	Extern(~Monthly, ROC(C, 5))
+	t_externNested:	Extern(~Quarterly, Extern($SPY, C))
+
+	// --- breadth operators, grouping modifiers, calculation control
+	t_brAvg:		#Avg ROC(C, 20)
+	t_brHigh:		#Highest ROC(C, 20)
+	t_brLow:		#Lowest ROC(C, 20)
+	t_brMed:		#Median ROC(C, 20)
+	t_brRank:		#Rank ROC(C, 20)
+	t_brDense:	#DenseRank ROC(C, 20)
+	t_brPctRank:	#PercentRank ROC(C, 20)
+	t_brPctRankN:	#PercentRankN(90) ROC(C, 20)
+	t_brStdDev:	#StdDev ROC(C, 20)
+	t_brSum:		#Sum InSPX
+	t_brCount:	#Count C
+	t_byEcon:		#Rank #ByEcon ROC(C, 63)
+	t_bySect:		#Rank #BySect ROC(C, 63)
+	t_byGroup:	#Rank #ByGroup ROC(C, 63)
+	t_byIndu:		#Avg #ByIndu ROC(C, 63)
+	t_byMkt:		#Rank #ByMkt V
+	t_byListNum:	#Rank #ByListNum V
+	t_byCII:		#Sum #ByCII InSPX
+	t_onePerDate:	#OnePerDate BarDate
+	t_onePerSym:	#OnePerSym InfoID
+	t_slowCalc:	#SlowCalc Slope(Log(C), 100)
+
+	// --- multi-bar-size data items
+	BarSize:	Weekly
+	t_weeklyMA:	MA(C, 10)
+	BarSize:	Daily
+	t_dailyMA:	MA(C, 10)
+
+Library:
+	// arguments by value (ArgN) and by reference (RefN)
+	t_myMA:		MA(Ref1, Arg2)
+	t_callMyMA:	t_myMA(C, 20)
+	t_trail:		HHV(H, BarsHeld) * 0.80
+	t_posVars:	FillPrice + FillPriceAvg + FillPriceMin + FillPriceMax + FillValue + FillQty + FillFraction
+	t_posVars2:	BarsHeld + OrderPrice + EntryDate + Shares + Contracts + Side + StratNum
+	t_posFlags:	IsSetup + SetupRank + IsOrder + IsExit + OrderRank + EntryRank + ExitRank + ExitType + ExitNum
+	t_posPrev:	PrevExitStop + PrevExitLimit + TLValueIn + TLValueOut + IsTracker
+	t_orderSums:		OrderSum(Shares) + OrderSum(Shares, $SPY) + SetupSum(1) + PositionSum(FillValue)
+	t_stratStats:	S.Equity + S.Alloc + S.StartEquity + S.FreeCash + S.Positions + S.Exposure
+	t_stratStats2:	S.LongExp + S.ShortExp + S.Invested + S.M2M + S.LongM2M + S.ShortM2M
+	t_stratStats3:	S.NetPct + S.NetAmt + S.NetAmtMin + S.NetAmtMax + S.NetPctMin + S.NetPctMax
+	t_stratStats4:	S.MaxDDPct + S.DDPct + S.MaxDDAmt + S.DDAmt + S.DDBars + S.MaxDDBars
+	t_stratStats5:	S.Wins + S.Losses + S.Setups + S.EntryOrders + S.Entries + S.Exits + S.Targets + S.Stops
+	t_stratStats6:	S.TradeBars + S.WinBars + S.LossBars + S.TradeAmt + S.TradePct + S.TradePctAlloc
+	t_stratStats7:	S.Comms + S.Slips + S.RollCosts + S.Dividends + S.Interest + S.NetFx + S.CashInOut + S.FeesInOut
+	t_stratStats8:	S.MFE + S.MAE + S.Collateral + S.MaxEquity + S.MinEquity + S.TWEQ + S.RiskFreeRate
+	t_stratStats9:	S.BPY + S.BPQ + S.BPM + S.BPW + S.Number + S.First + S.Date + FunStat
+	t_combinedRef:	Combined(S.Equity)
+	t_externStrat:	Extern(@mainStrat, S.Equity > MA(S.Equity, 50))
+	t_externByName:	Extern(StratRef(?Strategy), S.DDPct)
+	t_tradeFields:	T.DateIn + T.DateOut + T.PriceIn + T.PriceOut + T.QtyIn + T.QtyOut + T.Profit + T.Points
+	t_tradeFields2:	T.NetPct + T.Fraction + T.Bars + T.Highest + T.Lowest + T.Side + T.Reason + T.Div
+	t_tradeStats:	TradeStatAvg(T.Profit > 0, 50) + TradeStatSum(T.Profit) + TradeStatMax(T.Profit, 0, $SPY)
+	t_runInfo:	?ScriptName + ?RunMode + ?StartDate + ?EndDate + ?OrdersDate + ?AccountSize + ?LocalTime
+	t_stockInfo:	?Symbol + ?Name + ?EconSect + ?Sector + ?IndGroup + ?Industry + ?CII + ?Exchange
+	t_stockInfo2:	?Type + ?ListingType + ?EquityType + ?Domicile + ?Currency + ?ReportingCurrency
+	t_labelled:	Reason(1, "time stop")
+
+Strategy: mainStrat
+	Side:		Long
+	MaxPositions:	nLen
+	// a formula continued across tab-indented lines
+	EntrySetup:	C > MA(C, 200)
+		and V > 100000
+		and not IsNaN(t_brRank)
+	SetupScore:	-t_brRank
+	Quantity:	100 / nLen
+	QtyType:	Percent
+	ExitRule:	BarsHeld >= 10
+	ExitLimit:	IF(BarsHeld > 0, FillPrice * 1.05, NaN)
+	ExitStop:	t_trail

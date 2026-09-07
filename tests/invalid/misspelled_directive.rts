@@ -1,0 +1,7 @@
+// RealTest folds an unrecognized #word into the previous item's value,
+// which is how a misspelled #endif silently leaves a block unclosed
+Settings:
+	AccountSize:	100000
+#endi
+Strategy: s
+	EntrySetup:	1

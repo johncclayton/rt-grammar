@@ -1,0 +1,25 @@
+Notes:
+	A hand-written WalkForward: section -- the in-sample / out-of-sample split
+	form that needs no optimization.  N dates define N-1 intervals, so each
+	parameter row carries N-1 values.  (An optimizer-generated section has the
+	same shape, with one date per interval.)
+	A Namespace: prefix and a WalkForward: parameter list do not mix: RealTest
+	namespaces the row names too, and then cannot match them to the parameters.
+
+Settings:
+	DataFile:	feature_tests.rtd
+	AccountSize:	100000
+
+Parameters:
+	nLen:	20
+	nMult:	from 1 to 3 step 0.5 def 2 {x}
+
+Strategy: wf
+	EntrySetup:	C > MA(C, nLen)
+	ExitStop:	FillPrice - nMult * ATR(nLen)
+	MaxPositions:	nLen
+
+WalkForward:
+	Dates:	1/1/2000, 1/1/2010, 1/1/2018
+	nLen:	10, 20
+	nMult:	1.5, 2

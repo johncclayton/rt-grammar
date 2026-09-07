@@ -1,0 +1,7 @@
+// RealTest: unrecognized syntax element -- text before the first section
+// is skipped, but a line there that looks like an item is not
+foo: bar
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1

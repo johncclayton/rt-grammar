@@ -1,0 +1,164 @@
+Notes:
+	Every Strategy element, plus Template / Benchmark inheritance and the
+	StatsGroup / Combined element subset (capacity and allocation limits only
+	-- the per-position elements are rejected there).
+
+Settings:
+	DataFile:	feature_tests.rtd
+	AccountSize:	100000
+
+Template: base {color: #808080}
+	Side:		Both
+	BarSize:	Daily
+	Compounded:	True
+	MarkToMarket:	True
+	Ambiguity:	Default
+	AllowNoVolume:	False
+	AllowMissingBar:	False
+	IgnoreDividends:	False
+	GreedyScoring:	False
+	OrdersIgnoreSplits:	False
+	CalendarSym:	SPY
+	Tracker:	Hidden
+
+Strategy: everything {color: blue}
+	Using:		base
+
+	// --- timing and order types
+	EntryTime:	NextOpen
+	ExitTime:	NextClose
+	ExitStopTime:	Intraday
+	ExitLimitTime:	NextOpen
+	QtyPrice:	OrderPrice
+
+	// --- setup and entry
+	EntrySetup:	C > MA(C, 200) and RSI(2) < 10
+	SetupSkip:	Symbol = $GME
+	SetupScore:	-RSI(2)
+	MaxSetups:	200
+	MaxPerTurn:	5
+	StrategyScore:	ROC(S.Equity, 20)
+	EntryPhase:	1
+	EntrySkip:	IsNaN(ATR(20))
+	EntryLimit:	C * 0.99
+	EntryStop:	H * 1.01
+	EntryScore:	ATR(20)
+	MaxEntries:	10
+	EntryTradeValue:	ATR(14)
+
+	// --- exits
+	ExitRule:	BarsHeld >= 10
+	ExitLimit:	IF(BarsHeld > 0, FillPrice * 1.05, NaN)
+	ExitStop:	FillPrice * 0.93
+	ExitQty:	Shares
+	ExitLimitQty:	Shares / 2
+	ExitStopQty:	Shares
+	ExitScore:	-BarsHeld
+	ExitTradeValue:	ATR(14)
+
+	// --- sizing
+	Quantity:	S.Alloc * 0.01 / ATR(20)
+	QtyType:	Shares
+	QtyFinal:	Min(Shares, 1000)
+	QtyRound:	1
+	PriceRound:	0.01
+	Allocation:	Combined(S.Equity)
+	StartPercent:	50
+	CashInOut:	IF(EndOfMonth, 1000, 0)
+	FeesInOut:	IF(EndOfYear, -250, 0)
+	DynamicSizing:	False
+	Reduce:		0.01 * S.Alloc
+
+	// --- capacity limits
+	MaxPositions:	10
+	MaxNewPos:	3
+	MaxExposure:	100
+	MaxNewExp:	30
+	MaxLongExp:	100
+	MaxShortExp:	50
+	MaxNetExp:	100
+	MinNetExp:	-50
+	MaxInvested:	100000
+	MaxNewInv:	30000
+	MaxLongInv:	100000
+	MaxShortInv:	50000
+	MaxNetInv:	100000
+	MinNetInv:	-50000
+	MinFreeCash:	0
+
+	// --- concentration limits
+	Category:	InfoGICS
+	MaxSameCat:	3
+	MaxCatExp:	40
+	MaxCatInv:	40000
+	MaxSameSym:	1
+	MaxSymExp:	20
+	MaxSymInv:	20000
+
+	// --- costs
+	Commission:	Max(1, 0.005 * Shares)
+	Slippage:	TickSize
+	OpenSlip:	0.01
+	CloseSlip:	0.01
+	StopSlip:	0.02
+	LimitSlip:	0
+	LimitExtra:	0.01
+	Collateral:	InfoMargin	// alias: FuturesMargin
+	RollCost:	2.50
+
+	// --- order output
+	OrderNote:	Format("{?} rank {#}", ?Symbol, SetupRank)
+	OrderExtra1:	"one"
+	OrderExtra2:	2
+	OrderExtra3:	3
+	OrderExtra4:	4
+	OrderExtra5:	5
+	OrderExtra6:	6
+	OrderExtra7:	7
+	OrderExtra8:	8
+	OrderExtra9:	9
+	OrdersMktAsLmtPct:	0.5
+
+	// --- debug output
+	DebugEntry:	Format("setup {~}", IsSetup)
+	DebugExit:	BarsHeld
+	DebugTargetStop:	PrevExitStop
+
+Strategy: playback
+	// imported trade list playback
+	TradeList:	?scriptpath?\stub_trades.csv
+	TLFields:	Symbol,Action,QtyIn,PriceIn,TimeIn,DateIn,,,Strategy
+	TLAdjusted:	False
+	TLAdoptPos:	True
+	TLCalcZPrices:	False
+	TLDateFmt:	MDY
+	TLNumFmt:	Point
+	TLDelim:	Comma
+	TLEndDate:	Latest
+	TLStratName:	playback
+	TLTimeShift:	0
+	OrdersUseTLEndDate:	False
+
+Benchmark: buyhold
+	Side:		Long
+	MaxPositions:	1
+	Quantity:	100
+	QtyType:	Percent
+	EntrySetup:	Symbol = $SPY and BarDate = BarStart
+	ExitRule:	False
+	Benchmark:	True
+
+StatsGroup: sleeve {color: black}
+	Using:		everything, playback
+	StartPercent:	50
+	Allocation:	Combined(S.Equity)
+	MaxExposure:	100
+	MaxPositions:	20
+	MaxSameSym:	1
+
+Combined:
+	MaxExposure:	100
+	MaxSameSym:	1
+	MaxSameCat:	5
+	MaxPositions:	30
+	MinFreeCash:	0

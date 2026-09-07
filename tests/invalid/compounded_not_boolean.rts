@@ -1,0 +1,6 @@
+// RealTest: expects True or False
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+	Compounded:	1

@@ -1,150 +1,654 @@
-%import common.WS
-%import common.CPP_COMMENT
-%import common.WS_INLINE
-%import common.NEWLINE
-%import common.SIGNED_NUMBER -> NUMBER
+// ===========================================================================
+// RealTest Script Language (.rts)
+// ===========================================================================
+// Parser:  LALR(1) with Lark's contextual lexer.
+//
+//   Lark(grammar, start="start", parser="lalr", lexer="contextual",
+//        propagate_positions=False, maybe_placeholders=False)
+//
+// The contextual lexer is load-bearing, not an optimization: RealTest's value
+// syntax depends on the item keyword that introduces it.  "SaveTradesAs:" is
+// followed by a raw path, "Side:" by one of three words, "Quantity:" by a
+// formula.  Because Lark picks each state's terminal set from the parser
+// state, those three can have their own terminals without colliding.  The same
+// mechanism keeps "{...}" a format spec directly after an item label and an
+// ordinary inline comment everywhere else.
+//
+// TWO RULES THIS GRAMMAR MUST OBEY, both consequences of how Lark lexes:
+//
+//   1. No two terminals may share a pattern, and overlapping patterns must be
+//      factored into one shared terminal.  LALR merges states that have the
+//      same item core -- notably the state after a shared sub-rule such as
+//      `expr`, `signed_number` or a date value -- so terminals from different
+//      sections end up in one scanner, where a tie is broken by terminal
+//      priority rather than by parser context.  Hence BARSIZE_KW,
+//      SHARED_PATH_KW, CAP_FORMULA_KW and BENCHMARK_KW: each is one terminal
+//      used from several sections, not one terminal per section.
+//
+//   2. Lark orders scanner alternatives by priority before length, so a
+//      higher-priority terminal wins even on a shorter match.  Every word-like
+//      terminal above priority 0 therefore ends in a boundary assertion --
+//      without "to\b", "topStocks:" lexes as the Parameters keyword TO.
+//
+// Layout:
+//   1. lexical basics (comments, preprocessor, whitespace)
+//   2. section headers
+//   3. sections
+//   4. item keywords, grouped by the value shape they take
+//   5. value shapes (path / number / bool / enum / list / date)
+//   6. the formula language
+//
+// Keyword lists, enum value sets and the reserved-name list were verified
+// against realtest.exe 2.0.32.7 with -parse.  Where the language reference and
+// the executable disagree, the executable wins; those cases are noted inline.
+// ===========================================================================
 
-INLINE_COMMENT: /\{(?!%)[^}]*\}/
-BLOCK_COMMENT: /\/\*(?:.|\n)*?\*\//
+start: _section*
 
+_section: notes_section
+        | settings_section
+        | import_section
+        | parameters_section
+        | data_section
+        | testdata_section
+        | stratdata_section
+        | library_section
+        | strategy_section
+        | template_section
+        | benchmark_section
+        | statsgroup_section
+        | combined_section
+        | scan_section
+        | testscan_section
+        | charts_section
+        | graphs_section
+        | results_section
+        | trades_section
+        | walkforward_section
+        | include_section
+        | namespace_section
+
+// ===========================================================================
+// 1. LEXICAL BASICS
+// ===========================================================================
+// Whitespace, including newlines, is ignored.  Line breaks carry no meaning
+// inside an item: RealTest appends a tab-indented continuation line to the
+// item above it as-is, and an item ends where the next "Name:" begins.  The
+// grammar gets that for free by folding the colon into the label terminals
+// (ITEM_LABEL and the *_KW keyword labels), which keeps the whole file
+// parseable with one token of lookahead.
+//
+// Indentation is likewise not significant.  RealTest reads a section header at
+// any indentation and an item at column 1, so neither is anchored here.  The
+// one place a line start still matters is where the Notes body ends; see
+// NOTES_BODY, which uses "(?<![^\n])" -- a line-start assertion that needs no
+// MULTILINE flag, since Lark composes terminals into one alternation where a
+// mid-pattern "(?m)" would be a Python error.
+
+// // to end of line
+CPP_COMMENT: /\/\/[^\n]*/
+// /* ... */, non-nesting
+BLOCK_COMMENT: /\/\*[\s\S]*?\*\//
+// {...} Pascal-style inline comment, non-nesting, may span lines.  Ignored
+// everywhere the grammar does not expect a format spec (see FORMAT_SPEC).
+INLINE_COMMENT: /\{[^}]*\}/
+
+// #define / #undef / #ifdef / #ifndef / #else / #endif.  Conditional blocks
+// are transparent to the grammar, so every branch gets validated -- which is
+// stricter than a run, where only the selected branch is parsed.
+PREPROC.90: /#(ifdef|ifndef|else|endif|define|undef)\b[^\n]*/i
+
+WS: /[ \t\r\n]+/
+
+// RealTest skips whatever precedes the first section, as long as no line there
+// looks like an item ("name: value", which is an error).  "(?<![\s\S])" is a
+// start-of-input assertion, so this can only ever match once, at offset 0.
+PREAMBLE.95: /(?<![\s\S])(?:[ \t]*(?![A-Za-z_][A-Za-z0-9_.]*[ \t]*:)[^\n]*\n)+/
+
+%ignore PREAMBLE
 %ignore WS
-%ignore WS_INLINE
 %ignore CPP_COMMENT
-%ignore INLINE_COMMENT
 %ignore BLOCK_COMMENT
+%ignore INLINE_COMMENT
+%ignore PREPROC
 
-DATA_HEADER: /Data:/
-GRAPHS_HEADER: /Graphs:/
-IMPORT_HEADER: /Import:/
-SETTINGS_HEADER: /Settings:/
-BENCHMARK_HEADER: /Benchmark:/
-PARAMETERS_HEADER: /Parameters:/
-STRATEGY_HEADER: /Strategy:/
-TEMPLATE_HEADER: /Template:/
-INCLUDE_HEADER: /Include:/
-CHARTS_HEADER: /Charts:/
-TRADES_HEADER: /Trades:/
-NOTES_HEADER: /Notes:/
-LIBRARY_HEADER: /Library:/
-NAMESPACE_HEADER: /Namespace:/
-ORDERSETTINGS_HEADER: /OrderSettings:/
-ORDERINCLUDE_HEADER: /OrderInclude:/
-RESULTS_HEADER: /Results:/
-SCAN_HEADER: /Scan:/
-SCANINCLUDE_HEADER: /ScanInclude:/
-SCANSETTINGS_HEADER: /ScanSettings:/
-TESTSETTINGS_HEADER: /TestSettings:/
-TESTDATA_HEADER.1: /TestData:/
-COMBINED_HEADER: /Combined:/
-WALKFORWARD_HEADER: /WalkForward:/
+// Format / attribute spec attached to an item: {#2}, {%}, {$-2}, {^2}, {|},
+// {`}, {"Label"}, {color: red, line: dashed}, and the Parameters {x} marker.
+// Contents are deliberately not validated: the legacy glyph form is an
+// open-ended mini-language ({!2}, {#|"Trades"}, {%|^} all occur in the
+// shipped examples).
+FORMAT_SPEC.5: /\{[^}\n]*\}/
 
-// Section-specific keywords based on RT manual section 17.17 and sample usage analysis
-SETTINGS_KEYWORD.11: /(?i)(AccountSize|AccountType|AllowSameName|AlwaysImport|BarSize|CashIntPct|Currency|DataFile|DateDisplay|DateInput|DateSym|DaysPerYear|Dividends|EndDate|EndOfTestExits|ExchangeMap|Filter|HolidayList|KeepTrades|LTGains|LegacyMode|MarginIntPct|NumBars|NumDays|OptKeepBest|OptKeepByDate|OptScoreCol|OptSortResults|OptTestInterval|OptTestLength|OptTimeUnit|OptWalkForward|OptimizeMode|OptimizeSettings|OrderClerkFolder|OrdersComment|OrdersFile|OrdersLiveData|OrdersMode|OrdersNetLiq|OrdersTemplate|RandomSeed|ReportContent|ReportsFolder|ResultsFile|RiskFreeRateSym|STGains|SaveChartsTo|SavePositionsAs|SaveScanAs|SaveStatsAs|SaveTestListAs|SaveTradesAs|SaveTradesType|ScanNoDefCols|ScanNoHeader|ScanNoWindow|SkipTestIf|StartDate|SymChangeList|TaxOwed|TestName|TestOutput|TestScan|TestScanAllDates|UseAvailableBars)/
+// ===========================================================================
+// 2. SECTION HEADERS
+// ===========================================================================
 
-IMPORT_KEYWORD.11: /(?i)(Adjustment|CIIFamily|CIILevel|CSVDateFmt|CSVDelim|CSVFields|CSVFile|CSVNumFmt|Classification|Constituency|DataPath|DataSource|EndDate|EventListFile|ExcludeIf|ExcludeList|Fundamentals|IncludeList|KeepAdjusted|KeepNonIncluded|KeepRedundant|LogFile|NoWeekends|PadAlignSym|Padding|RemoveLatest|SaveAs|StartDate|SymInfoFile|Update)/
+NOTES_HDR.100:       /Notes[ \t]*:/i
+SETTINGS_HDR.100:    /(Settings|TestSettings|ScanSettings|OrderSettings|OptimizeSettings)[ \t]*:/i
+IMPORT_HDR.100:      /Import[ \t]*:/i
+PARAMETERS_HDR.100:  /Parameters[ \t]*:/i
+DATA_HDR.100:        /Data[ \t]*:/i
+TESTDATA_HDR.100:    /TestData[ \t]*:/i
+STRATDATA_HDR.100:   /StratData[ \t]*:/i
+LIBRARY_HDR.100:     /Library[ \t]*:/i
+STRATEGY_HDR.100:    /Strategy[ \t]*:/i
+TEMPLATE_HDR.100:    /Template[ \t]*:/i
+BENCHMARK_HDR.100:   /Benchmark[ \t]*:/i
+STATSGROUP_HDR.100:  /StatsGroup[ \t]*:/i
+COMBINED_HDR.100:    /Combined[ \t]*:/i
+SCAN_HDR.100:        /Scan[ \t]*:/i
+TESTSCAN_HDR.100:    /TestScan[ \t]*:/i
+CHARTS_HDR.100:      /Charts[ \t]*:/i
+GRAPHS_HDR.100:      /Graphs[ \t]*:/i
+RESULTS_HDR.100:     /Results[ \t]*:/i
+TRADES_HDR.100:      /Trades[ \t]*:/i
+WALKFORWARD_HDR.100: /WalkForward[ \t]*:/i
+// Include: and its run-mode variants.  RealTest accepts OrdersInclude; there
+// is no OrderInclude.
+INCLUDE_HDR.100:     /(Include|ScanInclude|TestInclude|OrdersInclude)[ \t]*:/i
+NAMESPACE_HDR.100:   /Namespace[ \t]*:/i
 
-STRATEGY_KEYWORD.11: /(?i)(Allocation|AllowMissingBar|AllowNoVolume|Ambiguity|BarSize|CalendarSym|CashInOut|CashList|Category|CloseSlip|Commission|Compounded|DebugEntry|DebugExit|DebugTargetStop|DynamicSizing|EntryLimit|EntryScore|EntrySetup|EntrySkip|EntryStop|EntryTime|EntryTradeValue|ExitLimit|ExitLimitQty|ExitLimitTime|ExitQty|ExitRule|ExitScore|ExitStop|ExitStopQty|ExitStopTime|ExitTime|ExitTradeValue|FeesInOut|FeesList|FuturesMargin|GreedyScoring|IgnoreDividends|LimitExtra|LimitSlip|MarkToMarket|MaxCatExp|MaxCatInv|MaxEntries|MaxExposure|MaxInvested|MaxLongExp|MaxLongInv|MaxNetExp|MaxNetInv|MaxNewExp|MaxNewInv|MaxNewPos|MaxPerTurn|MaxPositions|MaxSameCat|MaxSameSym|MaxSetups|MaxShortExp|MaxShortInv|MaxSymExp|MaxSymInv|MinFreeCash|MinNetExp|MinNetInv|OpenSlip|OrderNote|OrdersFile|OrdersMktAsLmtPct|OrdersTemplate|PriceRound|QtyFinal|QtyPrice|QtyRound|QtyType|Quantity|Reduce|RollCost|SetupScore|SetupSkip|Side|Slippage|StartPercent|StopSlip|StrategyScore|TLAdjusted|TLDateFmt|TLDelim|TLFields|TLIgnoreRules|TLNumFmt|TLStratName|TLTimeShift|Tracker|TradeList|Using)/
+// ===========================================================================
+// 3. SECTIONS
+// ===========================================================================
 
-RESERVED_IDENTIFIER.10: /(?i)(Symbol|Name|BarNum|InfoID|InfoExpiry|InfoFloat|InfoGICS|InfoMargin|InfoTRBC|FilterNum|InList|ListNum|PointValue|InfoShares|TickSize)/
-RESERVED_WORD.9: /(?i)\?[a-zA-Z]+(\?)?/
-WATCHLIST_REF: /&[-A-Za-z0-9_.@]+/
-PATH_LITERAL.0: /(?!\/\/)(?!\s*[A-Za-z_][A-Za-z0-9_]*\s*\()(?![A-Za-z_][A-Za-z0-9_]*:)(?:#[^\n]+|[^,()\[\]{}\n\/]+(?:\/(?!\/)[^,()\[\]{}\n\/]*)*)/
-SECTION_WORD.6: /(?i)(Data|Graphs|Import|Settings|Benchmark|Parameters|Strategy|Template|Include|Charts|Trades|Notes|Library|Namespace|OrderSettings|OrderInclude|Results|Scan|ScanInclude|ScanSettings|TestSettings|Combined|WalkForward)/
-INCLUDE_RAW.0: /[^\{\n]+/
-NOT.8: /(?i)not/
+// --- Notes -----------------------------------------------------------------
+// Free text.  Ends only at the next section keyword followed by a colon at the
+// start of a line (an indented line counts), which is why a section name
+// mentioned in the prose has to be quoted: "Combined:".
+notes_section: NOTES_HDR NOTES_BODY?
 
-start: section+
+NOTES_BODY.80: /(?s:.+?)(?=(?<![^\n])[ \t]*(?i:Notes|Settings|TestSettings|ScanSettings|OrderSettings|OptimizeSettings|Import|Parameters|Data|TestData|StratData|Library|Strategy|Template|Benchmark|StatsGroup|Combined|Scan|TestScan|Charts|Graphs|Results|Trades|WalkForward|Include|ScanInclude|TestInclude|OrdersInclude|Namespace)[ \t]*:|\Z)/
 
-section: benchmark_section | charts_section | data_section | graphs_section | \
-         include_section | library_section | namespace_section | testsettings_section | \
-         notes_section | import_section | settings_section | parameters_section | testdata_section | \
-         strategy_section | template_section | combined_section | walkforward_section | trades_section | order_settings_section | order_include_section | \
-         results_section | scan_section | scan_include_section | scan_settings_section
+// --- Include / Namespace ---------------------------------------------------
+include_section: INCLUDE_HDR LINE_VALUE?
+namespace_section: NAMESPACE_HDR NAME
 
-notes_section: NOTES_HEADER NEWLINE? NOTE_BLOCK?
-NOTE_BLOCK: /(?ms).+?(?=^[A-Za-z_][A-Za-z0-9_]*:|\Z)/
+// --- Settings family -------------------------------------------------------
+// Settings, TestSettings, ScanSettings, OrderSettings and OptimizeSettings
+// share one keyword universe; RealTest decides per run mode which apply.
+settings_section: SETTINGS_HDR _setting_decl*
 
-data_section: DATA_HEADER NEWLINE? declaration*
-graphs_section: GRAPHS_HEADER NEWLINE? declaration*
-import_section: IMPORT_HEADER NEWLINE? declaration*
-include_section: INCLUDE_HEADER (expression NEWLINE | NEWLINE?) declaration*
-settings_section: SETTINGS_HEADER NEWLINE? declaration*
-benchmark_section: BENCHMARK_HEADER (expression NEWLINE | NEWLINE?) declaration*
-parameters_section: PARAMETERS_HEADER NEWLINE? parameters_declaration*
-strategy_section: STRATEGY_HEADER (expression NEWLINE | NEWLINE?) declaration*
-template_section: TEMPLATE_HEADER (expression NEWLINE | NEWLINE?) declaration*
-combined_section: COMBINED_HEADER NEWLINE? declaration*
-walkforward_section: WALKFORWARD_HEADER NEWLINE? walkforward_entry*
-walkforward_entry: walkforward_list_declaration | NEWLINE
-walkforward_list_declaration: identifier ":" _TAB? walkforward_list CPP_COMMENT? NEWLINE?
-walkforward_list: walkforward_item (walkforward_sep walkforward_item)*
-walkforward_item: date_literal | NUMBER
-walkforward_sep: "," NEWLINE*
-charts_section: CHARTS_HEADER NEWLINE? declaration*
-trades_section: TRADES_HEADER NEWLINE? declaration*
-library_section: LIBRARY_HEADER NEWLINE? declaration*
-testdata_section: TESTDATA_HEADER NEWLINE? declaration*
-results_section: RESULTS_HEADER NEWLINE? declaration*
-scan_section: SCAN_HEADER NEWLINE? declaration*
-scan_include_section: SCANINCLUDE_HEADER NEWLINE? declaration*
-scan_settings_section: SCANSETTINGS_HEADER NEWLINE? declaration*
-testsettings_section: TESTSETTINGS_HEADER NEWLINE? declaration*
-order_settings_section: ORDERSETTINGS_HEADER NEWLINE? declaration*
-order_include_section: ORDERINCLUDE_HEADER NEWLINE? declaration*
+_setting_decl: set_path_decl
+             | set_number_decl
+             | set_numexpr_decl
+             | set_bool_decl
+             | set_date_decl
+             | set_formula_decl
+             | set_enum_decl
+             | set_enumlist_decl
 
-namespace_expr: identifier | /(?i)none/
-namespace_section: NAMESPACE_HEADER NEWLINE? namespace_expr NEWLINE?
+set_path_decl:    (SET_PATH_KW | SHARED_PATH_KW) LINE_VALUE?
+set_number_decl:  SET_NUM_KW signed_number
+set_numexpr_decl: SET_NUMEXPR_KW expr
+set_bool_decl:    SET_BOOL_KW BOOL
+set_date_decl:    STARTDATE_KW start_date_value
+                | ENDDATE_KW end_date_value
+// Restating a setting with a blank value clears it -- the way a wrapper script
+// suppresses an output an included script turned on.
+set_formula_decl: (SET_FORMULA_KW | ORDERSMKTASLMTPCT_KW) FORMAT_SPEC? expr?
 
-date_expr: date_literal | "Latest" | "Earliest"
-date_identifier: /(?i)StartDate/ | /(?i)EndDate/
-include_list_expr: string_literal | loose_field_list | field_list | path_name
-include_name: / \{ "[^"]*" \} /
-aliased_item: (identifier | stock_symbol | symbol_item) ">" identifier
-field_item: aliased_item | identifier | reserved_identifier | SECTION_WORD | WATCHLIST_REF | stock_symbol | string_literal | symbol_item
-loose_field_list: field_item+
-include_raw: INCLUDE_RAW
-declaration: date_declaration | include_list_declaration | normal_declaration
-parameters_declaration: parameter_range_declaration | parameter_list_declaration | date_declaration | include_list_declaration | normal_declaration
-parameter_range_declaration: qualified_name ":" _TAB? "from" NUMBER "to" NUMBER "step" NUMBER ("def" NUMBER)? NEWLINE?
-parameter_list_declaration: qualified_name ":" _TAB? NUMBER ("," NUMBER)* NEWLINE?
-date_declaration: date_identifier ":" _TAB? date_expr NEWLINE?
-include_list_declaration: /(?i)IncludeList:/ _TAB? include_list_value include_name? NEWLINE?
-include_list_value: include_list_expr | include_raw
-normal_declaration: qualified_name ":" _TAB? expression NEWLINE?
-expression: format_spec? logical_expr format_spec? CPP_COMMENT?
-format_spec: /\{%[^}]*\}/
-logical_expr: or_expr
-or_expr: and_expr ("or" and_expr)*
-and_expr: not_expr ("and" not_expr)*
-not_expr: NOT not_expr -> not_expr
-        | comparison_expr
-comparison_expr: add_expr (comparison_op add_expr)*
-add_expr: mul_expr (add_op mul_expr)*
-mul_expr: pow_expr (mul_op pow_expr)*
-pow_expr: indexed_expr ("^" pow_expr)?
-mul_op: "*" | "/"
-add_op: "+" | "-"
-indexed_expr: primary ("[" index_value "]")?
-index_value: sign? index_term (add_op index_term)*
-sign: "+" | "-"
-index_term: NUMBER | identifier | reserved_identifier
-primary: "(" expression ")" | base_expr
-base_expr: function_call | qualified_name | NUMBER | date_literal | boolean_literal | stock_symbol | string_literal | field_list | path_name | RESERVED_IDENTIFIER | WATCHLIST_REF  
-DATE_LITERAL.1: /\d{8}|\d{4}\/\d{2}\/\d{2}|\d{4}-\d{2}-\d{2}|\d{4}\.\d{2}\.\d{2}|\d{2}-[A-Za-z]{3}-\d{2,4}|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{1,2}-\d{1,2}-\d{2,4}|\d{1,2}\.\d{1,2}\.\d{2,4}/
-date_literal: DATE_LITERAL
-boolean_literal: /(?i)True/ | /(?i)False/
-reserved_identifier: RESERVED_IDENTIFIER
-path_name: reserved_word path_literal? | path_literal
-reserved_word: RESERVED_WORD
-field_list: field_item? ("," field_item? )*
-symbol_item: /[%$][\w.]+/
-comparison_op: "<" | ">" | "<=" | ">=" | "==" | "<>" | "!=" | "=" 
-function_call: (RESERVED_IDENTIFIER | qualified_name) "(" arguments? ")"
-arguments: expression ("," expression)*
-identifier: /(?i)(?!Data\b|Graphs\b|Import\b|Settings\b|Benchmark\b|Parameters\b|Strategy\b|Template\b|Include\b|Charts\b|Trades\b|Notes\b|Library\b|Namespace\b|OrderSettings\b|OrderInclude\b|Results\b|Scan\b|ScanInclude\b|ScanSettings\b|TestData\b|TestSettings\b|WalkForward\b|True\b|False\b)[a-zA-Z_][a-zA-Z0-9_]*/
-qualified_name: identifier ("." identifier)*
-string_literal: /"[^"]*"/
-stock_symbol: /[$%](?:[$&])?[A-Za-z0-9_.@]+/
-path_literal: PATH_LITERAL
+set_enum_decl: ACCOUNTTYPE_KW ACCOUNTTYPE_VAL
+             | BARSIZE_KW BARSIZE_VAL
+             | CHARTBARSIZE_KW BARSIZE_VAL
+             | COMMCURRENCY_KW COMMCURRENCY_VAL
+             | DATEINPUT_KW DATEFMT_VAL
+             | SAVETRADESTYPE_KW SAVETRADESTYPE_VAL
+             | ORDERSMODE_KW ORDERSMODE_VAL
+             | ORDERSCLASSDELIM_KW ORDERSCLASSDELIM_VAL
+             | CHARTTRADEEXTRAAFTER_KW CHARTTRADEEXTRAAFTER_VAL
+             | CHARTTRADELABELS_KW CHARTTRADELABELS_VAL
+             | OPTIMIZEMODE_KW OPTIMIZEMODE_VAL
+             | OPTTIMEUNIT_KW OPTTIMEUNIT_VAL
+             | OPTANCHOR_KW OPTANCHOR_VAL
+             | OPTSHOWRESULTS_KW OPTSHOWRESULTS_VAL
 
-_TAB.5: /\t/
+set_enumlist_decl: KEEPTRADES_KW _kt_list
+                 | LOGDETAIL_KW _ld_list
+                 | REPORTCONTENT_KW _rc_list
+                 | RESULTSBYYEAR_KW _rby_list
+                 | SAVESTATSINCLUDE_KW _ssi_list
+                 | TESTOUTPUT_KW _to_list
+
+_kt_list:  KEEPTRADES_VAL ("," KEEPTRADES_VAL)*
+_ld_list:  LOGDETAIL_VAL ("," LOGDETAIL_VAL)*
+_rc_list:  REPORTCONTENT_VAL ("," REPORTCONTENT_VAL)*
+_rby_list: RESULTSBYYEAR_VAL ("," RESULTSBYYEAR_VAL)*
+_ssi_list: SAVESTATSINCLUDE_VAL ("," SAVESTATSINCLUDE_VAL)*
+_to_list:  TESTOUTPUT_VAL ("," TESTOUTPUT_VAL)*
+
+// --- Import ----------------------------------------------------------------
+import_section: IMPORT_HDR _import_decl*
+
+_import_decl: imp_path_decl
+            | imp_bool_decl
+            | imp_date_decl
+            | imp_formula_decl
+            | imp_namelist_decl
+            | imp_enum_decl
+
+imp_path_decl:     IMP_PATH_KW LINE_VALUE?
+imp_bool_decl:     IMP_BOOL_KW BOOL
+imp_date_decl:     STARTDATE_KW start_date_value
+                 | ENDDATE_KW end_date_value
+imp_formula_decl:  IMP_FORMULA_KW expr
+imp_namelist_decl: IMP_NAMELIST_KW _field_list
+
+imp_enum_decl: DATASOURCE_KW DATASOURCE_VAL
+             | ADJUSTMENT_KW ADJUSTMENT_VAL
+             | PADDING_KW PADDING_VAL
+             | CSVDATEFMT_KW DATEFMT_VAL
+             | CSVDELIM_KW DELIM_VAL
+             | CSVNUMFMT_KW NUMFMT_VAL
+             | CLASSIFICATION_KW CLASSIFICATION_VAL
+             | REMOVELATEST_KW REMOVELATEST_VAL
+
+// --- Parameters ------------------------------------------------------------
+//   p: 42
+//   p: from 10 to 100 step 10 def 50 {x}
+//   p: 10, 20, 50 def 20
+// Values are literals; RealTest rejects formulas here.  A trailing {x} marks
+// the parameter as pre-selected in the Optimize dialog.
+parameters_section: PARAMETERS_HDR param_decl*
+
+param_decl: ITEM_LABEL (param_range | param_list) FORMAT_SPEC?
+
+// RealTest tolerates a repeated "def" clause and uses the last one
+param_range: FROM signed_number TO signed_number (STEP signed_number)? (DEF signed_number)*
+param_list: signed_number ("," signed_number)* (DEF signed_number)*
+
+FROM.20: /from\b(?![ \t]*:)/i
+TO.20:   /to\b(?![ \t]*:)/i
+STEP.20: /step\b(?![ \t]*:)/i
+DEF.20:  /def\b(?![ \t]*:)/i
+
+// --- Data / TestData / StratData -------------------------------------------
+// User-named formula items, optionally prefixed with breadth and calculation
+// tags.  Data: and TestData: also take a BarSize: statement, which applies to
+// every item after it, and a DataValueFile: naming the CSV that supplies
+// values for the items tagged #DataValueFile.  StratData: takes neither: it
+// holds one value per strategy per date, so it has no bar-size or per-symbol
+// dimension.
+data_section: DATA_HDR _dataish_decl*
+testdata_section: TESTDATA_HDR _dataish_decl*
+stratdata_section: STRATDATA_HDR data_item_decl*
+
+_dataish_decl: data_item_decl | data_barsize_decl | data_valuefile_decl
+data_item_decl: ITEM_LABEL FORMAT_SPEC? tagged_value
+data_barsize_decl: BARSIZE_KW BARSIZE_VAL
+data_valuefile_decl: DATAVALUEFILE_KW LINE_VALUE?
+
+DATAVALUEFILE_KW.30: /DataValueFile[ \t]*:/i
+
+// Tags may stand alone: "#DataValueFile #DVFAlign #Fill" defines an item whose
+// values come from a CSV rather than a formula.
+tagged_value: hash_tag+ expr?
+            | expr
+
+hash_tag: HASH_TAG
+        | HASH_PCTRANKN "(" expr ")"
+
+HASH_TAG.20: /#(Avg|Highest|Lowest|Median|DenseRank|PercentRank|Rank|StdDev|Sum|Count|ByEcon|BySect|ByGroup|ByIndu|ByMkt|ByListNum|ByCII|OnePerDate|OnePerSym|OnePerX|SlowCalc|DataValueFile|DVFFill|DVFPad|DVFAlign|Fill|Pad)\b/i
+HASH_PCTRANKN.25: /#PercentRankN\b/i
+
+// --- Library ---------------------------------------------------------------
+// Named formula shortcuts, substituted inline.  No BarSize: statement here.
+library_section: LIBRARY_HDR library_decl*
+library_decl: ITEM_LABEL FORMAT_SPEC? expr
+
+// --- Strategy / Template / Benchmark ---------------------------------------
+strategy_section:  STRATEGY_HDR NAME? FORMAT_SPEC? _strategy_decl*
+template_section:  TEMPLATE_HDR NAME? FORMAT_SPEC? _strategy_decl*
+benchmark_section: BENCHMARK_HDR NAME? FORMAT_SPEC? _strategy_decl*
+
+_strategy_decl: str_formula_decl
+              | str_bool_decl
+              | str_path_decl
+              | str_date_decl
+              | str_using_decl
+              | str_fields_decl
+              | str_enum_decl
+
+// A strategy element may be left blank, which disables it -- handy for keeping
+// a placeholder line in a template.  Data / Library / column items may not:
+// RealTest answers "formula is empty" there.
+str_formula_decl: (STR_FORMULA_KW | CAP_FORMULA_KW | ORDERSMKTASLMTPCT_KW) FORMAT_SPEC? expr?
+str_bool_decl:    (STR_BOOL_KW | BENCHMARK_KW) BOOL
+str_path_decl:    (STR_PATH_KW | SHARED_PATH_KW) LINE_VALUE?
+str_date_decl:    STR_DATE_KW end_date_value
+str_using_decl:   USING_KW _name_list
+str_fields_decl:  TLFIELDS_KW _field_list
+
+str_enum_decl: SIDE_KW SIDE_VAL
+             | BARSIZE_KW BARSIZE_VAL
+             | ENTRYTIME_KW ORDERTIME_VAL
+             | EXITTIME_KW ORDERTIME_VAL
+             | QTYTYPE_KW QTYTYPE_VAL
+             | QTYPRICE_KW QTYPRICE_VAL
+             | AMBIGUITY_KW AMBIGUITY_VAL
+             | TRACKER_KW TRACKER_VAL
+             | TLDATEFMT_KW DATEFMT_VAL
+             | TLDELIM_KW DELIM_VAL
+             | TLNUMFMT_KW NUMFMT_VAL
+
+// --- StatsGroup / Combined -------------------------------------------------
+// Capacity and allocation limits shared across strategies; neither accepts the
+// per-position strategy elements.  StatsGroup names its members with Using:;
+// Combined: is implicitly every strategy in the script and rejects Using:.
+statsgroup_section: STATSGROUP_HDR NAME? FORMAT_SPEC? (_group_decl | grp_using_decl)*
+combined_section:   COMBINED_HDR NAME? FORMAT_SPEC? _group_decl*
+
+_group_decl: grp_formula_decl | grp_bool_decl
+grp_formula_decl: CAP_FORMULA_KW FORMAT_SPEC? expr?
+grp_bool_decl:    BENCHMARK_KW BOOL
+grp_using_decl:   USING_KW _name_list
+
+// --- Report / scan column sections -----------------------------------------
+// Named output columns.  A column with no {...} spec is a hidden helper: it
+// computes so later columns can reference it, but is not emitted.
+// Scan:, TestScan:, Trades:, Results: and Graphs: take Filter: (and the
+// numbered Filter1:/Filter2: of a scan) and Sort:.  Charts: takes neither --
+// both names are reserved, so they cannot be column names there either.
+scan_section:     SCAN_HDR _filterable_decl*
+testscan_section: TESTSCAN_HDR _filterable_decl*
+trades_section:   TRADES_HDR _filterable_decl*
+results_section:  RESULTS_HDR _filterable_decl*
+graphs_section:   GRAPHS_HDR _filterable_decl*
+charts_section:   CHARTS_HDR column_decl*
+
+_filterable_decl: column_decl | filter_decl | sort_decl
+
+column_decl: ITEM_LABEL FORMAT_SPEC? expr
+filter_decl: FILTER_KW expr
+sort_decl:   SORT_KW _sort_list
+
+_sort_list: sort_item ("," sort_item)*
+// "-" sorts descending; "+" is accepted and means ascending, the default
+sort_item: (MINUS | PLUS)? NAME
+
+// --- WalkForward -----------------------------------------------------------
+// Dates: plus, in an optimizer-generated section, one value list per
+// parameter.  N dates define N-1 intervals and each parameter row carries N-1
+// values -- a count rule RealTest enforces and the grammar does not.
+walkforward_section: WALKFORWARD_HDR _wf_decl*
+_wf_decl: wf_dates_decl | wf_values_decl
+wf_dates_decl:  WF_DATES_KW DATE_LIT ("," DATE_LIT)*
+wf_values_decl: ITEM_LABEL signed_number ("," signed_number)*
+
+WF_DATES_KW.30: /Dates[ \t]*:/i
+
+// ===========================================================================
+// 4. ITEM KEYWORDS
+// ===========================================================================
+// Keyword labels carry priority 30 so that, in a section where a user item
+// name is also legal, "BarSize:" is the statement rather than an item named
+// BarSize -- which matches RealTest, where these names are reserved
+// ("reserved syntax elements cannot be used as item names").
+//
+// Each label pattern ends in "[ \t]*:", which doubles as the word boundary:
+// "AccountSizeX:" cannot match the AccountSize alternative.
+
+// --- Shared across sections ------------------------------------------------
+// One terminal per pattern; see rule 1 in the header comment.
+STARTDATE_KW.30:         /StartDate[ \t]*:/i
+ENDDATE_KW.30:           /EndDate[ \t]*:/i
+BARSIZE_KW.30:           /BarSize[ \t]*:/i
+SHARED_PATH_KW.30:       /(HolidayList|OrdersFile|OrdersTemplate|OrdersNetLiq|OrdersFreeCash)[ \t]*:/i
+ORDERSMKTASLMTPCT_KW.30: /OrdersMktAsLmtPct[ \t]*:/i
+BENCHMARK_KW.30:         /Benchmark[ \t]*:/i
+USING_KW.30:             /Using[ \t]*:/i
+// Capacity and allocation limits -- legal in Strategy, StatsGroup and Combined
+CAP_FORMULA_KW.30: /(Allocation|MaxCatExp|MaxCatInv|MaxEntries|MaxExposure|MaxInvested|MaxLongExp|MaxLongInv|MaxNetExp|MaxNetInv|MaxNewExp|MaxNewInv|MaxNewPos|MaxPositions|MaxSameCat|MaxSameSym|MaxShortExp|MaxShortInv|MaxSymExp|MaxSymInv|MinFreeCash|MinNetExp|MinNetInv|StartPercent)[ \t]*:/i
+
+// --- Settings --------------------------------------------------------------
+SET_PATH_KW.30: /(DataFile|ResultsFile|ExchangeMap|SymChangeList|SaveChartsTo|SaveLogAs|SavePositionsAs|SaveScanAs|SaveStatsAs|SaveTestListAs|SaveTradesAs|ReportsFolder|OrderClerkFolder|Currency|DateDisplay|DateSym|RiskFreeRateSym|OptScoreCol)[ \t]*:/i
+
+SET_NUM_KW.30: /(AccountSize|CashIntPct|MarginIntPct|ShortLoanIntPct|ShortPrcdsIntPct|DaysPerYear|RandomSeed|OptMutatePct|OptOverfitBlocks|ChartTradeExtra|ChartLineWidth|ChartImageWidth|ChartImageHeight)[ \t]*:/i
+
+SET_NUMEXPR_KW.30: /(NumBars|NumDays|SaveChartsMax|ChartVisibleBars|OptIterations|OptKeepBest|OptTestLength|OptTestInterval|OptShards)[ \t]*:/i
+
+SET_BOOL_KW.30: /(AllowSameName|AlwaysImport|EndOfTestExits|ScanNoDefCols|ScanNoHeader|ScanNoWindow|TestScanAllDates|TestScanPositions|UseAvailableBars|OrdersLiveData|OrdersUseQtyIn|ChartEntryExitLine|ChartShowOtherTrades|ChartCandlestick|ChartLogScale|ChartSplitAdjust|ChartVolumePane|ChartIndicatorPane|ChartGrid|OptByStrategy|OptBySymbol|OptSortResults|OptKeepByDate|OptKeepBySymbol|OptKeepNoTrades|OptClearResults|OptOverfit|OptWalkForward|OptMultiSaveAs|OptSummaryLog|OptNoDialog|OptNoStats|OptContinueResults)[ \t]*:/i
+
+SET_FORMULA_KW.30: /(SkipTestIf|TestName|OrdersComment)[ \t]*:/i
+
+ACCOUNTTYPE_KW.30:          /AccountType[ \t]*:/i
+CHARTBARSIZE_KW.30:         /ChartBarSize[ \t]*:/i
+COMMCURRENCY_KW.30:         /CommCurrency[ \t]*:/i
+DATEINPUT_KW.30:            /DateInput[ \t]*:/i
+SAVETRADESTYPE_KW.30:       /SaveTradesType[ \t]*:/i
+ORDERSMODE_KW.30:           /OrdersMode[ \t]*:/i
+ORDERSCLASSDELIM_KW.30:     /OrdersClassDelim[ \t]*:/i
+CHARTTRADEEXTRAAFTER_KW.30: /ChartTradeExtraAfter[ \t]*:/i
+CHARTTRADELABELS_KW.30:     /ChartTradeLabels[ \t]*:/i
+OPTIMIZEMODE_KW.30:         /OptimizeMode[ \t]*:/i
+OPTTIMEUNIT_KW.30:          /OptTimeUnit[ \t]*:/i
+OPTANCHOR_KW.30:            /OptAnchor[ \t]*:/i
+OPTSHOWRESULTS_KW.30:       /OptShowResults[ \t]*:/i
+KEEPTRADES_KW.30:           /KeepTrades[ \t]*:/i
+LOGDETAIL_KW.30:            /LogDetail[ \t]*:/i
+REPORTCONTENT_KW.30:        /ReportContent[ \t]*:/i
+RESULTSBYYEAR_KW.30:        /ResultsByYear[ \t]*:/i
+SAVESTATSINCLUDE_KW.30:     /SaveStatsInclude[ \t]*:/i
+TESTOUTPUT_KW.30:           /TestOutput[ \t]*:/i
+
+// --- Import ----------------------------------------------------------------
+IMP_PATH_KW.30: /(IncludeList|ExcludeList|DataPath|CSVFile|SaveAs|LogFile|SymInfoFile|EventListFile|PadAlignSym|Constituency|CIIFamily|CIILevel)[ \t]*:/i
+IMP_BOOL_KW.30: /(KeepAdjusted|KeepNonIncluded|KeepRedundant|NoWeekends|RepairData|Update)[ \t]*:/i
+IMP_FORMULA_KW.30:  /ExcludeIf[ \t]*:/i
+IMP_NAMELIST_KW.30: /(CSVFields|Fundamentals)[ \t]*:/i
+
+DATASOURCE_KW.30:     /DataSource[ \t]*:/i
+ADJUSTMENT_KW.30:     /Adjustment[ \t]*:/i
+PADDING_KW.30:        /Padding[ \t]*:/i
+CSVDATEFMT_KW.30:     /CSVDateFmt[ \t]*:/i
+CSVDELIM_KW.30:       /CSVDelim[ \t]*:/i
+CSVNUMFMT_KW.30:      /CSVNumFmt[ \t]*:/i
+CLASSIFICATION_KW.30: /Classification[ \t]*:/i
+REMOVELATEST_KW.30:   /RemoveLatest[ \t]*:/i
+
+// --- Strategy / Template / Benchmark ---------------------------------------
+STR_FORMULA_KW.30: /(CashInOut|Category|CloseSlip|Collateral|Commission|DebugEntry|DebugExit|DebugTargetStop|EntryLimit|EntryPhase|EntryScore|EntrySetup|EntrySkip|EntryStop|EntryTradeValue|ExitLimitQty|ExitLimit|ExitQty|ExitRule|ExitScore|ExitStopQty|ExitStop|ExitTradeValue|FeesInOut|FuturesMargin|LimitExtra|LimitSlip|MaxPerTurn|MaxSetups|OpenSlip|OrderNote|OrderExtra[1-9]|PriceRound|QtyFinal|QtyRound|Quantity|Reduce|RollCost|SetupScore|SetupSkip|Slippage|StopSlip|StrategyScore)[ \t]*:/i
+
+STR_BOOL_KW.30: /(AllowMissingBar|AllowNoVolume|Compounded|DynamicSizing|GreedyScoring|IgnoreDividends|MarkToMarket|OrdersIgnoreSplits|OrdersUseTLEndDate|TLAdjusted|TLAdoptPos|TLCalcZPrices)[ \t]*:/i
+
+STR_PATH_KW.30: /(CalendarSym|CashList|FeesList|TLStratName|TLTimeShift|TradeList)[ \t]*:/i
+
+STR_DATE_KW.30:  /TLEndDate[ \t]*:/i
+TLFIELDS_KW.30:  /TLFields[ \t]*:/i
+
+SIDE_KW.30:      /Side[ \t]*:/i
+ENTRYTIME_KW.30: /EntryTime[ \t]*:/i
+EXITTIME_KW.30:  /(ExitTime|ExitStopTime|ExitLimitTime)[ \t]*:/i
+QTYTYPE_KW.30:   /QtyType[ \t]*:/i
+QTYPRICE_KW.30:  /QtyPrice[ \t]*:/i
+AMBIGUITY_KW.30: /Ambiguity[ \t]*:/i
+TRACKER_KW.30:   /Tracker[ \t]*:/i
+TLDATEFMT_KW.30: /TLDateFmt[ \t]*:/i
+TLDELIM_KW.30:   /TLDelim[ \t]*:/i
+TLNUMFMT_KW.30:  /TLNumFmt[ \t]*:/i
+
+// --- Scan / TestScan / Trades / Results / Graphs ---------------------------
+FILTER_KW.30: /Filter\d*[ \t]*:/i
+SORT_KW.30:   /Sort[ \t]*:/i
+
+// --- Generic user item label ----------------------------------------------
+// Names may hold letters, digits, periods and underscores and must start with
+// a letter or underscore.  No hyphens: RealTest reads "-" as minus.
+// RealTest rejects an item named after any built-in function, value,
+// keyword or enum word ("reserved syntax elements cannot be used as item
+// names"), which is what makes `atr: ATR(10)` a parse error rather than a
+// shadowed indicator. The list below was produced by probing every
+// identifier in the language reference against realtest.exe -parse.
+// A name that is a legal statement somewhere -- BarSize, Filter, Sort,
+// Using, Dates, DataValueFile, EntrySetup and the rest -- has its own
+// higher-priority terminal, so listing it here only blocks it where it is
+// not a statement.
+ITEM_LABEL: /(?!(?:Abs|AccountSize|AccountType|Adjusted|Adjustment|ADX|AEMA|AESD|Allocation|AllowMissingBar|AllowNoVolume|AllowSameName|AlwaysImport|Ambiguity|AND|ArcCos|ArcSin|ArcTan|Assert|ATR|Avg|BarDate|BarNum|BarsHeld|BarSize|BarsLeft|BarStart|BBBot|BBBotF|BBPct|BBPctF|BBTop|BBTopF|BBTrend|BBTrendF|BBWidth|BBWidthF|BITAND|BITNOT|BITOR|BITXOR|Bound|CalendarSym|CashInOut|CashIntPct|CashList|Category|CCI|CDF|ChartBarSize|ChartCandlestick|ChartEntryExitLine|ChartGrid|ChartImageHeight|ChartImageWidth|ChartIndicatorPane|ChartLineWidth|ChartLogScale|ChartShowOtherTrades|ChartSplitAdjust|ChartTradeExtra|ChartTradeExtraAfter|ChartVisibleBars|ChartVolumePane|CIIFamily|CIILevel|Classification|Close|CloseSlip|Collateral|CommCurrency|Commission|Compounded|Constituency|Contracts|Correl|CorrelAvg|CorrelMax|CorrelMaxSym|CorrelMed|CorrelMin|CorrelMinSym|CosH|Cosine|CountTrue|Cross|CRSI|CSVDateFmt|CSVDelim|CSVFields|CSVFile|CSVNumFmt|Currency|DataFile|DataPath|DataSource|DataType|DataValueFile|Date|DateBars|DateDay|DateDisplay|DateInput|DateMonth|Dates|DateSym|DateYear|DAY|DayOfWeek|DayOfYear|Days|DaysPerYear|DebugEntry|DebugEval|DebugExit|DebugTargetStop|DEMA|Dividend|DllDataCalc|DynamicSizing|EhlersBP|EhlersHP|EhlersSS|EhlersUS|EMA|EndDate|EndOfMonth|EndOfQuarter|EndOfTestExits|EndOfWeek|EndOfYear|EntryDate|EntryLimit|EntryPhase|EntryRank|EntryScore|EntrySetup|EntrySkip|EntryStop|EntryTime|EntryTradeValue|ESD|Event|EventListFile|ExchangeMap|ExcludeIf|ExcludeList|ExitLimit|ExitLimitQty|ExitLimitTime|ExitNum|ExitQty|ExitRank|ExitRule|ExitScore|ExitStop|ExitStopQty|ExitStopTime|ExitTime|ExitTradeValue|ExitType|Exp|Extern|Extra|FALSE|FeesInOut|FeesList|FillFraction|FillPrice|FillPriceAvg|FillPriceMax|FillPriceMin|FillQty|FillValue|Filter|FilterNum|find|Format|FormatDate|FunBar|Fundamentals|FunStat|FuturesMargin|FxRatio|GetField|GreedyScoring|HAvg|HHV|High|Highest|HMA|HolidayList|Hurst|HVOL|ICDF|IF|IgnoreDividends|IIF|IncludeList|InfoDelist|InfoExpiry|InfoFloat|InfoGICS|InfoID|InfoMargin|InfoShares|InfoTRBC|InList|InSet|IsExit|IsNaN|IsOrder|IsSetup|IsTracker|Item|JDSAR|KAMA|KBBot|KBTop|KeepAdjusted|KeepNonIncluded|KeepRedundant|KeepTrades|Kurtosis|left|length|LimitExtra|LimitSlip|LinReg|ListNum|LLV|Log|LogDetail|LogFile|Logit|Low|Lowest|LSHIFT|MA|MACD|MACDH|MACDS|MarginIntPct|MarkToMarket|match|Max|MaxCatExp|MaxCatInv|MaxEntries|MaxExposure|MaxInvested|MaxLongExp|MaxLongInv|MaxN|MaxNetExp|MaxNetInv|MaxNewExp|MaxNewInv|MaxNewPos|MaxPerTurn|MaxPositions|MaxSameCat|MaxSameSym|MaxSetups|MaxShortExp|MaxShortInv|MaxSymExp|MaxSymInv|MDI|Median|mid|Min|MinFreeCash|MinN|MinNetExp|MinNetInv|MissingBars|MOD|Month|MostRecent|NextOpen|NoNan|NOT|NoWeekends|NthOfMonth|NumBars|OBV|Open|OpenSlip|OptAnchor|OptByStrategy|OptBySymbol|OptClearResults|OptContinueResults|OptimizeMode|OptIterations|OptKeepBest|OptKeepByDate|OptKeepBySymbol|OptKeepNoTrades|OptMultiSaveAs|OptMutatePct|OptNoDialog|OptNoStats|OptOverfit|OptOverfitBlocks|OptScoreCol|OptShards|OptShowResults|OptSortResults|OptSummaryLog|OptTestInterval|OptTestLength|OptTimeUnit|OptWalkForward|OR|OrderClerkFolder|OrderExtra1|OrderExtra2|OrderExtra3|OrderExtra4|OrderExtra5|OrderExtra6|OrderExtra7|OrderExtra8|OrderExtra9|OrderNote|OrderPrice|OrderRank|OrdersClassDelim|OrdersComment|OrdersFile|OrdersFreeCash|OrdersIgnoreSplits|OrdersLiveData|OrdersMktAsLmtPct|OrdersMode|OrdersNetLiq|OrdersTemplate|OrderSum|OrdersUseQtyIn|OrdersUseTLEndDate|PadAlignSym|Padding|PctChg|PDI|Peak|PeakBars|PercentRank|PercentRankN|PointValue|PositionSum|PrevExitLimit|PrevExitStop|PriceRound|Product|QtyFinal|QtyPrice|QtyRound|QtyType|Quantity|Random|RandomSeed|Range|Rank|RankN|Reason|Reduce|Ref|RemoveLatest|RepairData|replace|ReportContent|ReportsFolder|Rescale|ResultsByYear|ResultsFile|RiskFreeRateSym|ROC|RollCost|Round|RRSI|RSHIFT|RSI|RsiF|SAR|SarF|SaveAs|SaveChartsMax|SaveChartsTo|SaveLogAs|SavePositionsAs|SaveScanAs|SaveStatsAs|SaveStatsInclude|SaveTestListAs|SaveTradesAs|SaveTradesType|ScanNoDefCols|ScanNoHeader|ScanNoWindow|Select|Sequence|SetupRank|SetupScore|SetupSkip|SetupSum|Shares|ShortLoanIntPct|ShortPrcdsIntPct|Side|Sign|SigSpike|SinceHigh|SinceLow|SinceTrue|Sine|SinH|Skewness|SkipNans|SkipTestIf|Slippage|Slope|Sort|Spearman|SPLIT|Sqr|StartDate|StartPercent|StdDev|StdErr|STOC|StopSlip|StrategyScore|StratNum|StratRef|Sum|SumSince|SumSQ|SuperTrend|Switch|SYMBOL|SymChangeList|SymInfoFile|SymNum|Tangent|TanH|TargetPrice|TEMA|testname|TestOutput|TestScanAllDates|TestScanPositions|this|TickSize|TLAdjusted|TLAdoptPos|TLCalcZPrices|TLDateFmt|TLDelim|TLEndDate|TLFields|TLNumFmt|TLStratName|TLTimeShift|TLValueIn|TLValueOut|ToDate|ToLower|ToNum|TOP|ToUpper|TR|Tracker|TradeList|TradeStatAvg|TradeStatKurt|TradeStatMax|TradeStatMin|TradeStatSkew|TradeStatStdDev|TradeStatSum|Trough|TroughBars|TRUE|TrueInRow|TrueRange|UntilEvent|UntilTrue|Update|Using|Volume|VWMA|WAvg|Week|WhenTrue|WMA|XAvg|Year|YInt)[ \t]*:)[A-Za-z_][A-Za-z0-9_.]*[ \t]*:/i
+
+// ===========================================================================
+// 5. VALUE SHAPES
+// ===========================================================================
+
+// Rest of line, minus any trailing // comment, plus any continuation lines.
+// Used for file paths, symbol and watchlist lists, and the other free-form
+// values RealTest resolves at run time rather than parse time -- a watchlist
+// name may hold spaces and "&" (".Russell 1000 Current & Past"), and an
+// IncludeList entry may carry an alias and a group name (SPY>SPY2 {"Bench"}).
+// A long list may wrap:
+//     IncludeList:  SPY, QQQ,
+//                   IWM, TLT
+// A continuation line is any non-blank line that does not start a new item
+// ("name:"), a directive (#) or a comment.
+LINE_VALUE: /[^\r\n]+?(?=[ \t]*(?:\/\/[^\r\n]*)?(?:\r?\n|\Z))(?:[ \t]*(?:\/\/[^\r\n]*)?\r?\n(?![ \t]*(?:\r?\n|\Z))(?![ \t]*(?:[A-Za-z_][A-Za-z0-9_.]*[ \t]*:|#|\/\/|\/\*))[^\r\n]+?(?=[ \t]*(?:\/\/[^\r\n]*)?(?:\r?\n|\Z)))*/
+
+BOOL: /(True|False)\b/i
+
+signed_number: MINUS? NUMBER
+
+_name_list: NAME ("," NAME)*
+// CSV column mappings, where an empty entry means "skip this column":
+//   TLFields: Symbol,Action,QtyIn,PriceIn,TimeIn,DateIn,,,Strategy
+_field_list: field_item ("," field_item)*
+field_item: NAME?
+
+// A date literal's field ORDER depends on the DateInput setting (and, for
+// scripts, on the program's Date Display option), so the grammar checks shape
+// only and leaves the calendar check to RealTest -- "10/18/23" is a valid date
+// under MDY and an invalid one under DMY.
+// "Earliest" pairs with StartDate, "Latest" with EndDate; RealTest rejects the
+// other pairing as an invalid date.
+start_date_value: DATE_LIT | EARLIEST
+end_date_value:   DATE_LIT | LATEST
+DATE_LIT.15: /\d{1,4}[-\/.]\d{1,2}[-\/.]\d{1,4}|\d{1,2}-[A-Za-z]{3}-\d{2,4}|\d{8}/
+EARLIEST.15: /Earliest\b/i
+LATEST.15:   /Latest\b/i
+
+// --- enum value sets -------------------------------------------------------
+// Each verified against realtest.exe -parse.
+ACCOUNTTYPE_VAL:  /(Margin|CashSameDay|CashNextDay)\b/i
+BARSIZE_VAL:      /(Daily|Weekly|Monthly|Quarterly|Yearly)\b/i
+COMMCURRENCY_VAL: /(Instrument|Account)\b/i
+DATEFMT_VAL:      /(MDY|DMY)\b/i
+DELIM_VAL:        /(Comma|Semicolon|Tab)\b/i
+NUMFMT_VAL:       /(Point|Comma)\b/i
+SAVETRADESTYPE_VAL: /(Full|Compact)\b/i
+ORDERSMODE_VAL:   /(Text|Template|OrderClerkSync|OrderClerkStats|OrderClerk|Rebalance)\b/i
+ORDERSCLASSDELIM_VAL: /(Space|Dot|Dash|Slash|None)\b/i
+CHARTTRADEEXTRAAFTER_VAL: /(Entry|Exit)\b/i
+CHARTTRADELABELS_VAL: /(None|Selected|All)\b/i
+OPTIMIZEMODE_VAL: /(Combinatorial|Sequential|Genetic|Random|Defaults)\b/i
+OPTTIMEUNIT_VAL:  /(None|Days|Weeks|Months|Years)\b/i
+OPTANCHOR_VAL:    /(None|Start|End)\b/i
+OPTSHOWRESULTS_VAL: /(Live|AtEnd|None)\b/i
+KEEPTRADES_VAL:   /(None|Strategy|Benchmark|Skipped|All)\b/i
+LOGDETAIL_VAL:    /(All|Caps|Cashflow|Positions|Setups|Trades|None)\b/i
+REPORTCONTENT_VAL: /(Correl|Graphs|Monthly|MonteCarlo|Plots|Script|Settings|Stats)\b/i
+RESULTSBYYEAR_VAL: /(ROR|MaxDD|Trades|None)\b/i
+SAVESTATSINCLUDE_VAL: /(Strategies|Benchmarks|StatsGroups|Combined)\b/i
+TESTOUTPUT_VAL:   /(Log|None|Trades|Report|Graph|Scan|Debug)\b/i
+DATASOURCE_VAL:   /(Norgate|CSIFutures|CSIStocks|Yahoo|Tiingo|EODHD|CSV|MetaStock)\b/i
+// CapitalSpecial converts special dividends to splits; accepted, undocumented.
+ADJUSTMENT_VAL:   /(CapitalSpecial|Capital|TotalReturn|None)\b/i
+PADDING_VAL:      /(None|AlignWithSymbol|AllMarketDays|AllWeekDays|AllCalendarDays)\b/i
+CLASSIFICATION_VAL: /(GICS|TRBC)\b/i
+REMOVELATEST_VAL: /(True|False|Partial)\b/i
+SIDE_VAL:         /(Long|Short|Both)\b/i
+ORDERTIME_VAL:    /(ThisClose|NextOpen|NextClose|Intraday|AtClose|AtOpen)\b/i
+QTYTYPE_VAL:      /(Shares|Value|Percent)\b/i
+QTYPRICE_VAL:     /(OrderPrice|FillPrice)\b/i
+AMBIGUITY_VAL:    /(Default|Stop|Target|Neither)\b/i
+TRACKER_VAL:      /(Visible|Hidden|None)\b/i
+
+// ===========================================================================
+// 6. FORMULA LANGUAGE
+// ===========================================================================
+// Precedence, loosest first:
+//   or -> and -> not -> comparison -> additive -> multiplicative -> unary
+//   -> power -> [offset] -> atom
+//
+// RealTest accepts "or"/"||", "not"/"!", MOD/"%", and the BIT* word operators.
+// It does NOT accept "&&", despite the language reference listing it, so this
+// grammar rejects it too.
+
+?expr: or_expr
+
+?or_expr: and_expr (OR and_expr)*
+?and_expr: not_expr (AND not_expr)*
+?not_expr: NOT not_expr -> logical_not
+         | comparison
+?comparison: additive (CMP_OP additive)*
+?additive: multiplicative ((PLUS | MINUS | BITOR | BITXOR) multiplicative)*
+?multiplicative: unary ((STAR | SLASH | MOD | BITAND | LSHIFT | RSHIFT) unary)*
+?unary: MINUS unary -> negate
+      | PLUS unary  -> unary_plus
+      | BITNOT unary -> bitwise_not
+      | power
+?power: offset (CARET unary)?
+
+// expr[N] = value of expr N bars ago.  An offset may follow a lookback
+// function -- LLV(L, 8)[1] is the lowest low of the 8 bars ending yesterday --
+// and a negative offset deliberately looks ahead.  At most one offset per
+// atom: RealTest rejects C[1][1], though (C[1])[1] is fine because the
+// parentheses form a new atom.
+?offset: atom ("[" expr "]")?
+
+?atom: NUMBER
+     | STRING
+     | funcall
+     | NAME
+     | SYMREF
+     | STRATREF
+     | GROUPREF
+     | BARSIZEREF
+     | QWORD
+     | "(" expr ")"
+
+// An argument may be empty, which is how an optional middle argument is
+// skipped -- IF(cond,,1) -- and what makes a trailing comma legal:
+//   Select(BarsHeld >= 5, "n-day",
+//          C > FillPrice * 1.1, "target",
+//   )
+funcall: NAME "(" _arguments ")"
+_arguments: argument ("," argument)*
+argument: expr?
+
+// --- formula terminals -----------------------------------------------------
+OR.10:     /(or\b|\|\|)/i
+AND.10:    /and\b/i
+NOT.10:    /(not\b|!(?!=))/i
+MOD.10:    /(mod\b|%)/i
+BITAND.10: /bitand\b/i
+BITOR.10:  /bitor\b/i
+BITXOR.10: /bitxor\b/i
+BITNOT.10: /bitnot\b/i
+LSHIFT.10: /lshift\b/i
+RSHIFT.10: /rshift\b/i
+
+CMP_OP: /<=|>=|<>|!=|==|<|>|=/
+PLUS: "+"
+MINUS: "-"
+STAR: "*"
+SLASH: "/"
+CARET: "^"
+
+NUMBER: /\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?/
+STRING: /"[^"\n]*"/
+
+// Identifiers, including all built-ins: C, Close, ATR, BarsHeld, InSPX,
+// S.Equity, T.Profit, ...  RealTest resolves these by name at parse time;
+// the grammar treats them uniformly.
+NAME: /[A-Za-z_][A-Za-z0-9_.]*/
+
+// $SPY, $$SPX (Norgate index), $%3MTCM (rate series), $&ES (futures market),
+// $#NYSEHL (Norgate "#" series), $XAO52WHI.au (country suffix), $VXX-201901
+// (delisted).  A hyphen binds into the symbol, so write "$SPY - 1" with spaces
+// when you mean subtraction -- RealTest reads it the same way.
+SYMREF.20: /\$[$%&#]?[A-Za-z0-9_.@\-]+/
+// @strategyName
+STRATREF.20: /@[A-Za-z_][A-Za-z0-9_.]*/
+// &cii / &99 / &-1 -- the current stock's corresponding industry index
+GROUPREF.20: /&(?:[A-Za-z_][A-Za-z0-9_.]*|-?\d+)/
+// ~Weekly etc. -- evaluate the expression on a different bar size
+BARSIZEREF.20: /~(Daily|Weekly|Monthly|Quarterly|Yearly)\b/i
+// ?Symbol, ?RunMode, ?ScriptName, ... -- string-valued stock/run properties
+QWORD.20: /\?[A-Za-z][A-Za-z0-9_]*/

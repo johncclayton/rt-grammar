@@ -1,0 +1,5 @@
+// RealTest: unrecognized import adjustment type
+Import:
+	DataSource:	Norgate
+	IncludeList:	SPY
+	Adjustment:	SplitsOnly

@@ -1,6 +1,6 @@
 # Quick start: Python environment
 
-This repo’s **Python** surface is the `.rts` validator (`validate_rts.py`), which needs **Python 3.7+** and **Lark**.
+This repo’s **Python** surface is the `.rts` validator (`validate_rts.py`) and the grammar regression suite (`tests/run_tests.py`), both of which need **Python 3.7+** and **Lark**.
 
 The VS Code extension under `vscode-rts/` uses **Node.js** separately; see [`vscode-rts/README.md`](vscode-rts/README.md) if you work on that.
 
@@ -140,6 +140,17 @@ pip install -r requirements.txt
 ```
 
 Then run the validator as in **§4** using `python validate_rts.py ...`. When finished, `deactivate`.
+
+## 5. Run the grammar tests
+
+`tests/valid/` must parse and `tests/invalid/` must be rejected; both halves are
+also cross-checked against `RealTest.exe` when it is installed.
+
+```bash
+python tests/run_tests.py
+python tests/run_tests.py --lark-only
+python tests/run_tests.py --corpus "C:\RealTest\Scripts"
+```
 
 ## Troubleshooting
 

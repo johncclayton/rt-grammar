@@ -1,0 +1,5 @@
+// RealTest: names may contain only letters, digits, periods and underscores
+Settings:
+	AccountSize:	100000
+Data:
+	some-name:	C

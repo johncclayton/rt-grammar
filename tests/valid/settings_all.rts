@@ -1,0 +1,139 @@
+Notes:
+	Every Settings-family keyword, in each of the five settings sections.
+	Values are the ones realtest.exe accepts; enum keywords list one valid
+	value each (the full sets are in the grammar's *_VAL terminals).
+
+Settings:
+	// files and folders
+	DataFile:	feature_tests.rtd
+	ResultsFile:	?output?\feature_tests.rtr
+	SaveTestListAs:	?output?\results.csv
+	SaveTradesAs:	?mainscriptpath?\trades.csv
+	SaveTradesType:	Compact
+	SaveStatsAs:	?scriptpath?\equity.csv
+	SaveStatsInclude:	Strategies, Benchmarks, StatsGroups, Combined
+	SavePositionsAs:	?output?\positions.csv
+	SaveScanAs:	?output?\scan.csv
+	SaveLogAs:	?output?\run_?date?_?time?.log
+	SaveChartsTo:	?output?\charts
+	SaveChartsMax:	100
+	ReportsFolder:	?output?\reports
+	ReportContent:	Correl, Graphs, Monthly, MonteCarlo, Plots, Script, Settings, Stats
+	// a blank value clears a file-output setting an included script turned on
+	OrdersFile:
+
+	// dates and calendar
+	StartDate:	2000-01-03
+	EndDate:	Latest
+	NumBars:	500
+	NumDays:	250
+	DateInput:	MDY
+	DateDisplay:	yyyy-mm-dd
+	DateSym:	SPY
+	DaysPerYear:	252
+
+	// account, interest and financing
+	AccountSize:	100000
+	AccountType:	Margin
+	CashIntPct:	0.5
+	MarginIntPct:	1.5
+	ShortLoanIntPct:	0.3
+	ShortPrcdsIntPct:	0.25
+	RiskFreeRateSym:	%3MTCM
+	Currency:	USD
+	CommCurrency:	Instrument
+
+	// test behaviour
+	BarSize:	Daily
+	UseAvailableBars:	True
+	EndOfTestExits:	True
+	AllowSameName:	False
+	RandomSeed:	12345
+	AlwaysImport:	False
+	KeepTrades:	Strategy, Benchmark, Skipped
+	TestName:	"feature coverage"
+	TestOutput:	Log, Trades
+	LogDetail:	Trades, Positions
+	ResultsByYear:	ROR, MaxDD, Trades
+	TestScanAllDates:	True
+	TestScanPositions:	False
+	ScanNoDefCols:	True
+	ScanNoHeader:	False
+	ScanNoWindow:	False
+
+	// chart options (builds after 2.0.32.6)
+	ChartBarSize:	Daily
+	ChartVisibleBars:	120
+	ChartTradeExtra:	10
+	ChartTradeExtraAfter:	Exit
+	ChartEntryExitLine:	True
+	ChartShowOtherTrades:	True
+	ChartTradeLabels:	All
+	ChartCandlestick:	False
+	ChartLogScale:	True
+	ChartSplitAdjust:	True
+	ChartVolumePane:	True
+	ChartIndicatorPane:	True
+	ChartGrid:	True
+	ChartLineWidth:	2
+	ChartImageWidth:	1600
+	ChartImageHeight:	1000
+
+TestSettings:
+	EndDate:	2024-12-31
+	AccountSize:	250000
+
+ScanSettings:
+	EndDate:	Latest
+	NumBars:	1
+
+OrderSettings:
+	EndDate:	2024-12-30
+	OrdersMode:	Template
+	OrdersLiveData:	True
+	OrdersUseQtyIn:	False
+	OrdersClassDelim:	Space
+	OrdersMktAsLmtPct:	0.5
+	OrdersComment:	Format("orders for {//}", ?OrdersDate)
+
+OptimizeSettings:
+	OptimizeMode:	Combinatorial
+	OptMutatePct:	25
+	OptIterations:	500
+	OptByStrategy:	False
+	OptBySymbol:	False
+	OptScoreCol:	MAR
+	OptSortResults:	True
+	OptKeepBest:	50
+	OptKeepByDate:	True
+	OptKeepBySymbol:	False
+	OptKeepNoTrades:	False
+	OptClearResults:	True
+	OptOverfit:	True
+	OptOverfitBlocks:	16
+	OptTimeUnit:	Years
+	OptTestLength:	3
+	OptTestInterval:	1
+	OptAnchor:	Start
+	OptWalkForward:	True
+	OptMultiSaveAs:	False
+	OptSummaryLog:	True
+	OptNoDialog:	True
+	OptShowResults:	AtEnd
+	OptNoStats:	False
+	OptContinueResults:	False
+	OptShards:	4
+	SkipTestIf:	nFast >= nSlow
+
+Parameters:
+	nFast:	from 5 to 20 step 5 {x}
+	nSlow:	from 50 to 200 step 50 {x}
+
+Results:
+	_ror:	S.NetPct
+	_maxdd:	S.MaxDDPct
+	MAR:	{#2}	_ror / _maxdd
+
+Strategy: base
+	EntrySetup:	Cross(MA(C, nFast), MA(C, nSlow))
+	ExitRule:	Cross(MA(C, nSlow), MA(C, nFast))

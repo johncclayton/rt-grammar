@@ -1,0 +1,107 @@
+Notes:
+	Column sections and output format specs: the legacy glyph form and the
+	named-attribute form, Filter:/FilterN:/Sort:, and the TestData / StratData
+	sections.
+
+Settings:
+	DataFile:	feature_tests.rtd
+	AccountSize:	100000
+
+Data:
+	DataValueFile:	?scriptpath?\stub_values.csv
+	extScore:	#DataValueFile #DVFAlign #Fill
+	extScore2:	#DataValueFile #DVFFill
+	extScore3:	#DataValueFile #DVFPad
+	extScore4:	#DataValueFile #Pad
+	rankExt:	#Rank extScore
+
+TestData:
+	// per-symbol per-date, evaluated while the test runs; no strategy context,
+	// so strategy references go through Extern(@name, ...)
+	BarSize:	Daily
+	stratEquity:	Extern(@main, S.Equity)
+	lastExit:	Extern(@main, SinceTrue(T.DateOut))
+	breadth:	#Avg (C > MA(C, 200))
+
+StratData:
+	// one value per strategy per date; has a strategy context, no symbol one
+	ddDepth:	S.DDPct
+	spyClose:	Extern($SPY, C)
+
+Scan:
+	Filter:		InSPX and C > 10
+	Filter1:	RSI(2) < 10
+	Filter2:	V > 1000000
+	Sym:		{?}	?Symbol
+	Price:		{$2}	C
+	Chg:		{%2}	ROC(C, 1)
+	RsiCol:		{#1}	RSI(2)
+	When:		{//}	BarDate
+	Flag:		{~}	C > O
+	Ticks:		{`}	C
+	Hidden:			ATR(20)
+	Labelled:	{#2|"Average True Range"}	ATR(20)
+	NegRed:		{$-2}	C - C[1]
+	Named:		{format: percent, places: 2}	ROC(C, 5)
+	Aliased:	{unit: number, places: 1, name: "ROC 20"}	ROC(C, 20)
+	Sort:		-RsiCol, Sym
+
+TestScan:
+	Filter:		EndOfMonth
+	Sym:		{?}	?Symbol
+	Eq:		{$}	Extern(@main, S.Equity)
+	Sort:		-Eq
+
+Charts:
+	Ma200:		{color: red, line: dashed}	MA(C, 200)
+	Ma50:		{color: #888888, width: 3}	MA(C, 50)
+	Alpha:		{line: bars, color: ARGB(110, 30, 90, 160), base: 0}	ATR(14)
+	Rsi14:		{format: percent, pane: ind2}	RSI(14)
+	Vol:		{pane: ind1, line: Bars}	V
+	AvgV:		{|}	MA(V, 50)
+	RsiPane:	{%^2}	RSI(14)
+	Stop:		{color: rgb(200, 0, 0)}	IF(BarDate >= T.DateIn, FillPrice * 0.93, NaN)
+
+Graphs:
+	Equity:		{$}	S.Equity
+	TWEQ:		{#2}	S.TWEQ
+	Drawdown:	{%^}	S.DDPct
+	Daily:		{%|}	S.NetPct
+	Monthly:	{%^2}	S.NetPct
+	Exposure:	{%}	S.Exposure
+	Positions:	{#}	S.Positions
+	EdgeRatio:	{format: number, places: 2}	1
+	Sort:		Equity
+
+Results:
+	_periods:	S.Number
+	_wins:		S.Wins
+	ROR:		{%2}	S.NetPct
+	MaxDD:		{%2}	S.MaxDDPct
+	MAR:		{#2}	S.NetPct / S.MaxDDPct
+	Sharpe:		{#2}	S.NetPct / S.RiskFreeRate
+	NumTrades:	{#}	S.Exits
+	Filter:		S.Exits > 0
+	Sort:		-MAR
+
+Trades:
+	Strat:		{?}	?Strategy
+	Sym:		{?}	?Symbol
+	DateIn:		{//}	T.DateIn
+	DateOut:	{//}	T.DateOut
+	Profit:		{$-2}	T.Profit
+	NetPct:		{%2}	T.NetPct
+	Rmult:		{#2}	T.Profit / T.ValueIn
+	FactorRsi:	{factor}	RSI(2)
+	FactorRoc:	{factor, format: percent, places: 2}	ROC(C, 5)
+	Filter:		T.Profit < 0
+	Sort:		Profit
+
+Strategy: main
+	EntrySetup:	RSI(2) < 10 and rankExt <= 10
+	SetupScore:	-RSI(2)
+	MaxPositions:	10
+	Quantity:	10
+	QtyType:	Percent
+	EntryTradeValue:	ATR(14)
+	ExitRule:	BarsHeld >= 5

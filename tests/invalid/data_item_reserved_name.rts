@@ -1,0 +1,5 @@
+// RealTest: reserved syntax elements cannot be used as item names
+Settings:
+	AccountSize:	100000
+Data:
+	atr:	ATR(10)

@@ -1,0 +1,89 @@
+Notes:
+	One Import block per data source, covering every Import keyword.
+	Multiple DataSource segments and multiple IncludeList / DataPath lines in
+	one Import section are legal; each IncludeList binds to the DataSource
+	declared above it.
+
+Import:
+	DataSource:	Norgate
+	IncludeList:	SPY, QQQ, IWM, TLT, GLD
+	IncludeList:	SPY {"Benchmark"}
+	IncludeList:	.Russell 1000 Current & Past
+	IncludeList:	$SPX
+	IncludeList:	%3MTCM
+	IncludeList:	&ES, &ES_CCB
+	IncludeList:	NDA-FI.HE>NDA.FI
+	IncludeList:	?scriptpath?\stub_symbols.txt
+	ExcludeList:	GME, AMC
+	ExcludeIf:	InfoDelist > 0
+	Constituency:	$SPX, $RUI
+	Classification:	GICS
+	Fundamentals:	aepsnorm, arevps, abvps
+	StartDate:	1990-01-01
+	EndDate:	Latest
+	Adjustment:	Capital
+	Padding:	AllMarketDays
+	PadAlignSym:	SPY
+	RemoveLatest:	Partial
+	KeepAdjusted:	False
+	KeepNonIncluded:	False
+	KeepRedundant:	False
+	NoWeekends:	True
+	RepairData:	True
+	Update:		False
+	SymInfoFile:	?scriptpath?\stub_syminfo.csv
+	EventListFile:	?scriptpath?\stub_events.csv
+	LogFile:	?output?\import.log
+	SaveAs:		feature_tests.rtd
+
+Import:
+	// one CSV per symbol, from a folder
+	DataSource:	CSV
+	DataPath:	?scriptpath?\csvdata {"CSI"}
+	CSVFields:	Date, Open, High, Low, Close, Volume
+	CSVDateFmt:	MDY
+	CSVNumFmt:	Point
+	CSVDelim:	Comma
+	IncludeList:	SYM1 {"Group1"}, SYM2 {"Group2"}
+	// ...and a multi-symbol file, which needs a Symbol column
+	CSVFile:	?scriptpath?\stub_multi.csv
+	CSVFields:	Date,Symbol,,Open,High,Low,Close,Volume,RealClose,Dividend
+	SaveAs:		feature_csv.rtd
+
+Import:
+	DataSource:	Yahoo
+	IncludeList:	SPY>SPY_YAHOO
+	StartDate:	Earliest
+	SaveAs:		feature_yahoo.rtd
+
+Import:
+	DataSource:	Tiingo
+	IncludeList:	SPY
+	SaveAs:		feature_tiingo.rtd
+
+Import:
+	DataSource:	EODHD
+	IncludeList:	SPY
+	SaveAs:		feature_eodhd.rtd
+
+Import:
+	DataSource:	MetaStock
+	DataPath:	?scriptpath?\msdata
+	SaveAs:		feature_ms.rtd
+
+Import:
+	DataSource:	CSIFutures
+	DataPath:	?scriptpath?\csidata
+	SaveAs:		feature_csi.rtd
+
+Import:
+	DataSource:	CSIStocks
+	DataPath:	?scriptpath?\csidata
+	SaveAs:		feature_csistocks.rtd
+
+Settings:
+	DataFile:	feature_tests.rtd
+	AccountSize:	100000
+
+Strategy: s
+	EntrySetup:	InList("Benchmark")

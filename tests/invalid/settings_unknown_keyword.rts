@@ -1,0 +1,4 @@
+// RealTest: unrecognized setting name
+Settings:
+	AccountSize:	100000
+	BogusSetting:	5

@@ -33,22 +33,32 @@ import argparse
 DEFAULT_REALTEST_EXE = Path(r"C:\RealTest\RealTest.exe")
 
 
-def load_grammar(grammar_path_str="lark/realtest.lark", *, quiet: bool = False):
-    """Load the Lark grammar from the specified path"""
+def load_grammar(grammar_path_str="realtest.lark", *, quiet: bool = False):
+    """Load the Lark grammar from the specified path.
+
+    The grammar is LALR(1) and depends on Lark's contextual lexer: RealTest's
+    value syntax varies by item keyword, and the contextual lexer is what lets
+    a path, an enum word and a formula each have their own terminal without
+    colliding. Do not switch this to earley/dynamic -- it both misparses and
+    runs some three orders of magnitude slower.
+    """
     grammar_path = Path(grammar_path_str)
     if not grammar_path.exists():
         print(f"Error: Grammar file not found at {grammar_path}")
         sys.exit(1)
 
     try:
-        with open(grammar_path, "r", encoding="utf-8") as f:
-            grammar_content = f.read()
-
+        grammar_content = grammar_path.read_text(encoding="utf-8")
         lark_parser = Lark(
             grammar_content,
             start="start",
-            parser="earley",
-            lexer="dynamic",
+            parser="lalr",
+            lexer="contextual",
+            propagate_positions=False,
+            maybe_placeholders=False,
+            # cache the LALR tables so repeated CLI runs skip the ~0.25s build;
+            # Lark keys the cache on the grammar text, so an edit invalidates it
+            cache=True,
         )
         if not quiet:
             print(f"[OK] Grammar loaded successfully from {grammar_path}")
@@ -59,36 +69,61 @@ def load_grammar(grammar_path_str="lark/realtest.lark", *, quiet: bool = False):
 
 
 def find_rts_files(samples_dir: Path):
-    """Find all .rts files in the provided samples directory"""
+    """Find all .rts files in the samples directory, including subfolders."""
     if not samples_dir.exists():
         print(f"Error: Samples directory not found at {samples_dir}")
         sys.exit(1)
 
-    rts_files = list(samples_dir.glob("*.rts"))
+    rts_files = list(samples_dir.rglob("*.rts"))
     if not rts_files:
         print(f"No .rts files found in {samples_dir}")
         sys.exit(1)
 
-    return sorted(rts_files, key=lambda p: p.name.lower())
+    return sorted(rts_files, key=lambda p: str(p).lower())
+
+
+def _source_context(content: str, line, column) -> str:
+    """The offending source line with a caret under the column."""
+    if not isinstance(line, int):
+        return ""
+    lines = content.splitlines()
+    if not (0 < line <= len(lines)):
+        return ""
+    text = lines[line - 1].replace("\t", "    ")
+    # the caret has to move with the tab expansion above
+    col = column if isinstance(column, int) else 1
+    prefix = lines[line - 1][: max(col - 1, 0)].replace("\t", "    ")
+    return f"  {text}\n  {' ' * len(prefix)}^"
 
 
 def format_lark_parse_error(path: Path, content: str, exc: Exception) -> str:
     """
-    Format a Lark parse/lex error with file path, line:column, and a caret
-    under the error position when Lark provides stream position.
+    Format a Lark parse/lex error as "path:line:col", the offending source line
+    with a caret, and a short description.
+
+    Lark's own message names the terminal it fell back to, which for this
+    grammar is usually NOTES_BODY: the contextual lexer re-lexes the failure
+    point with the full terminal set to build the error, and that catch-all
+    matches nearly anything. The token name is noise, so report the source line
+    instead.
     """
     path_s = str(path.resolve()) if path.exists() else str(path)
 
-    if isinstance(exc, UnexpectedCharacters):
-        return f"{path_s}:{exc.line}:{exc.column}:\n{exc}"
-
     if isinstance(exc, UnexpectedToken):
         loc = f"{path_s}:{exc.line}:{exc.column}:"
-        pos = exc.pos_in_stream
-        if isinstance(pos, int) and pos >= 0:
-            ctx = exc.get_context(content, span=80).rstrip("\n")
-            return f"{loc}\n{ctx}\n\n{exc}"
-        return f"{loc}\n{exc}"
+        ctx = _source_context(content, exc.line, exc.column)
+        if exc.token.type == "$END":
+            detail = "unexpected end of file (unclosed parenthesis or missing value?)"
+        else:
+            shown = str(exc.token).strip().splitlines()[0][:40]
+            detail = f"unexpected input here: {shown!r}"
+        return f"{loc}\n{ctx}\n  {detail}" if ctx else f"{loc} {detail}"
+
+    if isinstance(exc, UnexpectedCharacters):
+        loc = f"{path_s}:{exc.line}:{exc.column}:"
+        ctx = _source_context(content, exc.line, exc.column)
+        detail = f"unexpected character {content[exc.pos_in_stream]!r}"
+        return f"{loc}\n{ctx}\n  {detail}" if ctx else f"{loc} {detail}"
 
     if isinstance(exc, UnexpectedEOF):
         lines = content.splitlines()
@@ -122,7 +157,8 @@ def format_lark_parse_error(path: Path, content: str, exc: Exception) -> str:
 def validate_file(parser, file_path: Path):
     """Validate a single .rts file with Lark."""
     try:
-        content = file_path.read_text(encoding='utf-8')
+        # utf-8-sig: the script editor writes a BOM on some files
+        content = file_path.read_text(encoding='utf-8-sig')
         parser.parse(content)
         return True, None
     except (ParseError, LexError, UnexpectedInput) as e:
@@ -135,8 +171,9 @@ def realtest_parse(exe: Path, file_path: Path, timeout_sec: float = 300.0):
     """
     Run RealTest.exe -parse on file_path.
     On success: exit code 0, typically no console output.
-    On failure: non-zero exit code; stderr/stdout may be empty (treat exit
-    code as authoritative). Returns (ok, error_message).
+    On failure: non-zero exit code; stderr/stdout are usually empty because
+    RealTest is a GUI app, so the message is read from batchlog.txt beside the
+    executable. Returns (ok, error_message).
     """
     if not exe.is_file():
         return False, f"RealTest executable not found or not a file: {exe}"
@@ -152,6 +189,14 @@ def realtest_parse(exe: Path, file_path: Path, timeout_sec: float = 300.0):
         if completed.returncode == 0:
             return True, None
         out = (completed.stderr or "").strip() or (completed.stdout or "").strip()
+        if not out:
+            # batchlog.txt is rewritten each run and holds "Error in <file>
+            # line N col M (context): description"
+            batchlog = exe.parent / "batchlog.txt"
+            if batchlog.is_file():
+                logged = batchlog.read_text(encoding="utf-8", errors="replace").strip()
+                if str(file_path.resolve()) in logged or "Error" in logged:
+                    out = logged
         detail = out if out else f"exit code {completed.returncode}"
         return False, detail
     except subprocess.TimeoutExpired:
@@ -218,7 +263,7 @@ def main():
         "--samples",
         type=str,
         default="samples",
-        help="Path to samples directory (default: samples)"
+        help="Path to samples directory, searched recursively (default: samples)"
     )
 
     parser.add_argument(
@@ -310,9 +355,9 @@ def main():
 
     print("---")
     for name, err in lark_failures:
-        print(f"{name} — Lark:\n{err}\n")
+        print(f"{name} -- Lark:\n{err}\n")
     for name, err in rt_failures:
-        print(f"{name} — RealTest -parse:\n{err}\n")
+        print(f"{name} -- RealTest -parse:\n{err}\n")
 
     sys.exit(1)
 

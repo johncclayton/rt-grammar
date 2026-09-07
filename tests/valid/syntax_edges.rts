@@ -1,0 +1,68 @@
+78	stray text before the first section is skipped, as long as no line here
+	looks like an item -- "name: value" there is an error
+
+Notes:
+	Edge cases confirmed against realtest.exe: symbol reference forms, empty
+	and trailing function arguments, wrapped line values, blank element
+	values, sort direction markers, and the order-time aliases.
+
+Import:
+	DataSource:	Norgate
+	// a long list may wrap; a continuation line is any non-blank line that
+	// does not start a new item, a directive or a comment
+	IncludeList:	SPY, QQQ, IWM,
+			TLT, GLD,
+			EFA, EEM
+	IncludeList:	$SPX, $VIX, %FFYE, &ES, &ES_CCB
+	SaveAs:		feature_tests.rtd
+
+Settings:
+	DataFile:	feature_tests.rtd
+	AccountSize:	100000
+	StartDate:	1.2.2020
+	EndDate:	Latest
+
+Parameters:
+	// a repeated def clause is tolerated; the last one wins
+	pDouble:	from 1 to 5 def 0.5 def 0.75
+	pList:		10, 20, 50 def 20
+
+Data:
+	// symbol reference forms
+	symPlain:	Extern($SPY, C)
+	symIndex:	Extern($$SPX, C)
+	symRate:	Extern($%FFYE, C)
+	symFutures:	Extern($&ES, C)
+	symHash:	Extern($#NYSEHL, C)
+	symSuffix:	Extern($#XAO52WHI.au, C)
+	symDelisted:	Symbol = $VXX-201901
+	// a hyphen binds into a symbol, so subtraction needs spaces
+	symMinus:	$SPY - 1
+
+	// empty and trailing arguments
+	skipMiddle:	IF(C > O,, 1)
+	skipFirst:	IF(, 1, 0)
+	trailingComma:	Select(C > MA(C, 200), "up",
+				C < MA(C, 200), "down",
+			)
+	noArgs:		SAR()
+
+	// breadth operator applied to a parenthesized expression
+	breadthParen:	#Sum(InSPX and C > MA(C, 200))
+
+Strategy: edges
+	EntrySetup:	C > MA(C, 200)
+	// AtClose / AtOpen are accepted alongside ThisClose / NextOpen
+	EntryTime:	AtOpen
+	ExitTime:	AtClose
+	ExitStopTime:	AtClose
+	// a strategy element may be left blank, which disables it
+	StrategyScore:
+	MaxPositions:	10
+	ExitRule:	BarsHeld >= 5
+
+Scan:
+	Sym:		{?}	?Symbol
+	Chg:		{%2}	ROC(C, 1)
+	// "-" sorts descending, "+" ascending (the default)
+	Sort:		-Chg, +Sym

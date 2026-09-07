@@ -1,0 +1,8 @@
+// RealTest: this strategy element is not supported in StatsGroup
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+StatsGroup: g
+	Using:	s
+	ExitRule:	1

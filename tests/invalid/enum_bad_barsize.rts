@@ -1,0 +1,6 @@
+// RealTest: unrecognized bar size
+Settings:
+	AccountSize:	100000
+Strategy: s
+	EntrySetup:	1
+	BarSize:	Hourly

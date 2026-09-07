@@ -1,0 +1,7 @@
+// RealTest: unrecognized syntax element -- BarSize: is a Data statement,
+// not a Library one
+Settings:
+	AccountSize:	100000
+Library:
+	BarSize:	Weekly
+	zz:	MA(C, 5)

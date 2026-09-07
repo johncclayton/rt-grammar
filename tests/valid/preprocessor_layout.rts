@@ -1,0 +1,70 @@
+#define	coverage
+#undef	notdefined
+
+Notes:	Preprocessor directives, include forms, Namespace, WalkForward, and the
+	layout freedoms: continuation lines, items at column 1, section headers at
+	any indentation, blank values, and all three comment styles.
+	A section name in prose must be quoted -- "Settings:" -- or Notes ends here.
+
+/* a block comment,
+   spanning lines,
+   before the first real section */
+
+Namespace:	cov
+
+Settings:
+	DataFile:	feature_tests.rtd
+	AccountSize:	100000
+	{ an inline comment
+	  that spans lines is skipped in full }
+	DaysPerYear:	252	// a trailing line comment
+
+// an item at column 1 is legal; so is a section header that is indented
+Settings:
+StartDate:	2010-01-04
+	EndDate:	Latest
+
+#ifdef	coverage
+	Settings:
+		RandomSeed:	7
+#endif
+
+#ifndef	notdefined
+Settings:
+	AllowSameName:	True
+#else
+Settings:
+	AllowSameName:	False
+#endif
+
+#ifdef	research
+Include:	?scriptpath?\stub_include.rts
+#endif
+
+ScanInclude:	?scriptpath?\stub_include.rts
+TestInclude:	?scriptpath?\stub_include.rts
+OrdersInclude:	?scriptpath?\stub_include.rts
+
+Parameters:
+	nLen:	20
+	nMult:	from 1 to 3 step 0.5 def 2 {x}
+
+Data:
+	// a formula continued over several tab-indented lines: RealTest appends
+	// each continuation as-is, so the operators have to be explicit
+	longSetup:	C > MA(C, 200)
+		and RSI(2) < 10
+		and V > 500000
+		{ and DisabledExtraFilter }
+		and not IsNaN(ATR(20))
+	// a brace comment is the idiomatic way to disable part of a line
+	trimmed:	ATR(nLen) {* nMult}
+
+Strategy: cov_main
+	Side:		Long
+	EntrySetup:	longSetup
+	SetupScore:	-RSI(2)
+	MaxPositions:	nLen
+	Quantity:	100 / nLen
+	QtyType:	Percent
+	ExitRule:	BarsHeld >= 5
