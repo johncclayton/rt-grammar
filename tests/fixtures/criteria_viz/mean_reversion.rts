@@ -1,0 +1,37 @@
+Notes:
+    Simple mean reversion strategy example
+    Demonstrates typical RealTest script structure
+
+Import:
+    DataSource: Yahoo
+    IncludeList: $SPY
+    StartDate: 2020-01-01
+    EndDate: 2024-12-31
+    SaveAs: example_data.rtd
+
+Settings:
+    DataFile: example_data.rtd
+    AccountSize: 100000
+    StartDate: 2020-01-01
+    EndDate: 2024-12-31
+    BarSize: Daily
+
+Parameters:
+    NumPositions: from 5 to 15 step 5 def 10
+    RSIPeriod: from 2 to 5 step 1 def 2
+    RSIThreshold: from 5 to 15 step 5 def 10
+
+Data:
+    RSIV: RSI(RSIPeriod)
+    MA50: MA(C, 50)
+    Oversold: RSIV < RSIThreshold
+    AboveTrend: C > MA50
+
+Strategy: MeanReversion
+    Side: Long
+    EntrySetup: Oversold and AboveTrend
+    ExitRule: RSIV > 70
+    QtyType: Percent
+    Quantity: 100 / NumPositions
+    MaxPositions: NumPositions
+

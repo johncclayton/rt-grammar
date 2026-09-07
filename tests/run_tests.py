@@ -133,8 +133,24 @@ def main() -> int:
         for line in failures:
             print("  " + line)
         return 1
+
+    cv_code = run_criteria_viz_tests()
+    if cv_code != 0:
+        return cv_code
+
     print("\nAll checks passed.")
     return 0
+
+
+def run_criteria_viz_tests() -> int:
+    import unittest
+
+    suite = unittest.defaultTestLoader.discover(str(HERE), pattern="test_criteria_viz*.py")
+    if suite.countTestCases() == 0:
+        return 0
+    print(f"\ncriteria_viz:   {suite.countTestCases()} tests")
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    return 0 if result.wasSuccessful() else 1
 
 
 if __name__ == "__main__":

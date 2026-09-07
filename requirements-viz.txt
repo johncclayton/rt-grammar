@@ -1,0 +1,2 @@
+# Optional dependencies for criteria_viz (Phase 0 uses stdlib only).
+# Phase 1 will add fastapi and uvicorn for serve.
