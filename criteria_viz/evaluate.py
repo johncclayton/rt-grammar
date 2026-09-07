@@ -1,81 +1,98 @@
-"""Minimal formula evaluation — invoked only at bundle build time."""
+"""Evaluate CriteriaGraph nodes against a BarSeries at one bar (internal)."""
 
 from __future__ import annotations
 
 from typing import Mapping
 
-from criteria_viz.models import (
-    BarCriteria,
-    BarRow,
-    BarSeries,
-    CriterionSnapshot,
-    StrategyCriteria,
-    TradeRecord,
-    TradeTimeline,
-)
-
-# Phase 0 stub: constant false unless expression text is literally "True".
-# Phase 1 replaces this with a real boolean evaluator over BarRow fields.
+from criteria_viz.graph import CriteriaGraph, CriterionNode, NodeId, NodeKind
+from criteria_viz.models import Scalar
+from criteria_viz.series import BarSeries
 
 
-def _eval_bool(expr: str | None, row: BarRow, params: Mapping[str, float]) -> CriterionSnapshot:
-    name = "unknown"
-    if expr is None:
-        return CriterionSnapshot(name=name, expr="", value=False)
-    lowered = expr.strip().lower()
-    if lowered == "true":
-        value = True
-    elif lowered == "false":
-        value = False
-    else:
-        # Placeholder until Phase 1 evaluator lands.
-        value = False
-    return CriterionSnapshot(name=name, expr=expr, value=value)
+def evaluate_graph(
+    graph: CriteriaGraph,
+    series: BarSeries,
+    symbol: str,
+    bar_index: int,
+    root_id: NodeId,
+) -> Mapping[NodeId, Scalar]:
+    """Return node values for reachable subgraph at a single bar index."""
+    values: dict[NodeId, Scalar] = {}
+    for nid in graph.reachable_from(root_id):
+        node = graph.nodes[nid]
+        values[nid] = _eval_node(node, graph, series, symbol, bar_index, values)
+    return values
 
 
-def _phase_for_bar(bar_date: str, entry_date: str, is_last: bool) -> str:
-    if bar_date < entry_date:
-        return "setup"
-    if bar_date == entry_date:
-        return "entry"
-    if is_last:
-        return "exit"
-    return "hold"
+def _eval_node(
+    node: CriterionNode,
+    graph: CriteriaGraph,
+    series: BarSeries,
+    symbol: str,
+    bar_index: int,
+    memo: Mapping[NodeId, Scalar],
+) -> Scalar:
+    if node.kind is NodeKind.LITERAL:
+        return _literal_value(node)
+    if node.kind is NodeKind.DATA_REF:
+        if node.deps:
+            return memo[node.deps[0]]
+        return series.value(symbol, node.label, bar_index)
+    if node.kind is NodeKind.REF:
+        return series.value(symbol, node.label, bar_index)
+    if node.kind is NodeKind.UNARY:
+        return _eval_unary(node, memo)
+    if node.kind is NodeKind.BINARY:
+        return _eval_binary(node, memo)
+    if node.kind is NodeKind.CALL:
+        return _eval_call(node, memo)
+    raise ValueError(f"unsupported node kind {node.kind}")
 
 
-def compute_trade_timeline(
-    *,
-    trade: TradeRecord,
-    criteria: StrategyCriteria,
-    bars: BarSeries,
-    params: Mapping[str, float],
-    window_before: int = 5,
-    window_after: int = 5,
-) -> TradeTimeline:
-    """
-    Eager timeline construction — called exclusively from ``build_session()``.
-    """
-    idx = next(i for i, r in enumerate(bars.rows) if r.date == trade.date)
-    start = max(0, idx - window_before)
-    end = min(len(bars.rows), idx + window_after + 1)
-    window = bars.rows[start:end]
+def _literal_value(node: CriterionNode) -> Scalar:
+    raw = node.meta.get("value", "0")
+    if raw in ("True", "true"):
+        return True
+    if raw in ("False", "false"):
+        return False
+    return float(raw)
 
-    bar_criteria: list[BarCriteria] = []
-    for i, row in enumerate(window):
-        is_last = i == len(window) - 1
-        phase = _phase_for_bar(row.date, trade.date, is_last)
-        snaps = {
-            "entry_setup": _eval_bool(criteria.entry_setup, row, params),
-            "entry_skip": _eval_bool(criteria.entry_skip, row, params),
-            "setup_skip": _eval_bool(criteria.setup_skip, row, params),
-            "exit_rule": _eval_bool(criteria.exit_rule, row, params),
-        }
-        bar_criteria.append(BarCriteria(date=row.date, phase=phase, criteria=snaps))
 
-    return TradeTimeline(
-        trade_id=trade.trade_id,
-        symbol=trade.symbol,
-        strategy=trade.strategy,
-        entry_date=trade.date,
-        bars=tuple(bar_criteria),
-    )
+def _eval_unary(node: CriterionNode, memo: Mapping[NodeId, Scalar]) -> Scalar:
+    op = node.meta.get("op", "not")
+    arg = memo[node.deps[0]]
+    if op in ("not", "!"):
+        return not _truthy(arg)
+    if op == "-":
+        return -(arg or 0)
+    raise NotImplementedError(op)
+
+
+def _eval_binary(node: CriterionNode, memo: Mapping[NodeId, Scalar]) -> Scalar:
+    op = node.meta.get("op", "and")
+    left, right = memo[node.deps[0]], memo[node.deps[1]]
+    if op == "and":
+        return _truthy(left) and _truthy(right)
+    if op == "or" or op == "||":
+        return _truthy(left) or _truthy(right)
+    if op == "<":
+        return (left or 0) < (right or 0)
+    if op == ">":
+        return (left or 0) > (right or 0)
+    if op == "=" or op == "==":
+        return left == right
+    raise NotImplementedError(op)
+
+
+def _eval_call(node: CriterionNode, memo: Mapping[NodeId, Scalar]) -> Scalar:
+    # v1: only functions present in export columns resolve; else NotImplemented
+    fn = node.meta.get("fn", "")
+    raise NotImplementedError(f"call {fn}")
+
+
+def _truthy(value: Scalar) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return value != 0

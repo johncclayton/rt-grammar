@@ -1,44 +1,82 @@
-"""CLI entry: build bundle at startup, serve read-only API."""
+"""CLI for trade criteria visualization (v1 sketch)."""
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
-from criteria_viz.bundle import build_session
-from criteria_viz.serve import serve
+from criteria_viz import (
+    CriteriaTimelineService,
+    CsvBarSeries,
+    MockBarSeries,
+    TradePhase,
+    build_criteria_graph,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="criteria_viz", description="Trade criteria visualizer")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    serve_p = sub.add_parser("serve", help="Build session bundle once, serve read-only API")
-    serve_p.add_argument("--rts", required=True, help="Path to .rts strategy script")
-    serve_p.add_argument("--trades", required=True, help="Path to trade list CSV")
-    serve_p.add_argument("--bars", required=True, help="Path to OHLCV bar CSV")
-    serve_p.add_argument("--grammar", default="realtest.lark", help="Lark grammar path")
-    serve_p.add_argument("--host", default="127.0.0.1")
-    serve_p.add_argument("--port", type=int, default=8765)
-
+    parser = argparse.ArgumentParser(
+        description="Visualize how RTS entry/exit criteria evolved bar-by-bar per trade.",
+    )
+    parser.add_argument("--rts", required=True, type=Path, help="RealTest .rts strategy file")
+    parser.add_argument("--trades", required=True, type=Path, help="Trades CSV export")
+    parser.add_argument("--series", type=Path, help="Bar values CSV export")
+    parser.add_argument("--mock-series", action="store_true", help="Use MockBarSeries (tests)")
+    parser.add_argument("--strategy", help="Strategy name when script defines several")
+    parser.add_argument("--trade", type=int, default=0, help="Trade row index (0-based)")
+    parser.add_argument(
+        "--phase",
+        choices=[p.value for p in TradePhase],
+        default=TradePhase.ENTRY.value,
+    )
+    parser.add_argument("--lookback", type=int, default=30)
+    parser.add_argument("--all", action="store_true", help="Emit views for every trade")
+    parser.add_argument("--format", choices=("json",), default="json")
+    parser.add_argument("-o", "--output", type=Path, help="Write JSON to file instead of stdout")
+    parser.add_argument("--serve", action="store_true", help="Start web UI")
+    parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args(argv)
 
-    if args.command == "serve":
-        print("[criteria_viz] building session bundle …", file=sys.stderr)
-        session = build_session(
-            rts_path=args.rts,
-            trades_path=args.trades,
-            bars_path=args.bars,
-            grammar_path=args.grammar,
-        )
-        print(f"[criteria_viz] session fingerprint: {session.fingerprint}", file=sys.stderr)
-        print(f"[criteria_viz] precomputed timelines: {len(session.timelines)}", file=sys.stderr)
-        print(f"[criteria_viz] serving read-only API at http://{args.host}:{args.port}", file=sys.stderr)
-        serve(session, host=args.host, port=args.port)
+    graph = build_criteria_graph(args.rts, strategy=args.strategy)
+    if args.mock_series:
+        # Slice 1: caller must extend with scenario-specific overrides
+        series = MockBarSeries(_dates={}, _values={})
+    elif args.series:
+        series = CsvBarSeries.from_csv(args.series)
+    else:
+        parser.error("provide --series or --mock-series")
+
+    service = CriteriaTimelineService(
+        graph=graph,
+        series=series,
+        trades_csv=args.trades,
+        default_strategy=args.strategy,
+        lookback_bars=args.lookback,
+    )
+
+    phase = TradePhase(args.phase)
+
+    if args.serve:
+        from criteria_viz.web.app import run_server
+
+        run_server(service, port=args.port)
         return 0
 
-    return 1
+    if args.all:
+        payload = [v.to_json() for v in service.all_views(phase)]
+    else:
+        view = service.view_for_trade(args.trade, phase)
+        payload = view.to_json() if view else {"error": "no criterion for phase"}
+
+    text = json.dumps(payload, indent=2)
+    if args.output:
+        args.output.write_text(text, encoding="utf-8")
+    else:
+        print(text)
+    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

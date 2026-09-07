@@ -26,14 +26,16 @@ _CRIT_KW = re.compile(
 _STRATEGY = re.compile(r"^\s*Strategy\s*:\s*(\S+)", re.I)
 
 
-def extract_strategy_criteria(tree: Tree) -> Mapping[str, StrategyCriteria]:
+def extract_strategy_criteria(
+    tree: Tree, *, source_text: str | None = None
+) -> Mapping[str, StrategyCriteria]:
     """
     Return criterion expression text keyed by strategy name.
 
-    Sketch: scan pretty-printed tree for ``Strategy:`` blocks. Replace with
+    Sketch: scan RTS source lines for ``Strategy:`` blocks. Replace with
     grammar-aware visitor when rt-grammar grows an AST export.
     """
-    text = tree.pretty()
+    text = source_text if source_text is not None else tree.pretty()
     strategies: dict[str, StrategyCriteria] = {}
     current: str | None = None
     compounded = False

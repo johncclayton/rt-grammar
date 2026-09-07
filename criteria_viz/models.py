@@ -1,114 +1,106 @@
-"""Frozen value types for the snapshot bundle."""
+"""Shared value types for trade criteria visualization."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+from datetime import date, datetime
+from enum import Enum
 from typing import Any, Mapping, Optional
 
-
-@dataclass(frozen=True)
-class CriterionSnapshot:
-    """Truth value (and optional decomposition) for one criterion on one bar."""
-
-    name: str
-    expr: str
-    value: bool
-    parts: Mapping[str, bool] = field(default_factory=dict)
+from criteria_viz.graph import CriteriaGraph, NodeId
 
 
-@dataclass(frozen=True)
-class BarCriteria:
-    date: str
-    phase: str  # setup | entry | hold | exit
-    criteria: Mapping[str, CriterionSnapshot]
+Scalar = float | bool | None
 
 
-@dataclass(frozen=True)
-class TradeTimeline:
-    trade_id: str
-    symbol: str
-    strategy: str
-    entry_date: str
-    bars: tuple[BarCriteria, ...]
+class TradePhase(str, Enum):
+    """Which strategy formula root to replay."""
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "trade_id": self.trade_id,
-            "symbol": self.symbol,
-            "strategy": self.strategy,
-            "entry_date": self.entry_date,
-            "bars": [
-                {
-                    "date": b.date,
-                    "phase": b.phase,
-                    "criteria": {
-                        name: {
-                            "expr": c.expr,
-                            "value": c.value,
-                            **({"parts": dict(c.parts)} if c.parts else {}),
-                        }
-                        for name, c in b.criteria.items()
-                    },
-                }
-                for b in self.bars
-            ],
-        }
+    ENTRY = "entry"
+    EXIT = "exit"
+
+    @property
+    def strategy_keyword(self) -> str:
+        return "EntrySetup" if self is TradePhase.ENTRY else "ExitRule"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TradeRecord:
-    trade_id: str
+    """One row from a RealTest-style trades export."""
+
+    index: int
     symbol: str
-    strategy: str
-    action: str
+    action: str  # Buy, Sell, …
     quantity: float
     price: float
-    date: str
-    time: str = ""
+    trade_time: Optional[datetime]
+    trade_date: date
+    strategy: Optional[str] = None
+    extra: Mapping[str, str] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class StrategyCriteria:
-    """Extracted criterion expressions for one Strategy: block."""
+@dataclass(frozen=True, slots=True)
+class BarSnapshot:
+    """Criterion node values on a single bar."""
 
-    name: str
-    compounded: bool
-    entry_setup: Optional[str] = None
-    entry_skip: Optional[str] = None
-    setup_skip: Optional[str] = None
-    exit_rule: Optional[str] = None
+    bar_index: int
+    trade_date: date
+    values: Mapping[NodeId, Scalar]
+    changed: tuple[NodeId, ...] = ()
 
-
-@dataclass(frozen=True)
-class BarRow:
-    date: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-    extras: Mapping[str, float] = field(default_factory=dict)
+    @property
+    def date(self) -> date:
+        return self.trade_date
 
 
-@dataclass(frozen=True)
-class BarSeries:
-    symbol: str
-    rows: tuple[BarRow, ...]
+@dataclass(frozen=True, slots=True)
+class TradeCriteriaView:
+    """Bar-by-bar replay of compound criteria for one trade and phase."""
 
+    trade: TradeRecord
+    phase: TradePhase
+    strategy: str
+    root_id: NodeId
+    graph: CriteriaGraph
+    timeline: tuple[BarSnapshot, ...]
+    signal_bar: BarSnapshot
+    root_satisfied: bool
+    lookback_bars: int
 
-@dataclass(frozen=True)
-class SessionBundle:
-    """
-    Immutable session snapshot. All API reads project from this object.
-
-    ``timelines`` is fully populated by ``build_session()``; handlers must not
-    recompute formulas or reload source files.
-    """
-
-    fingerprint: str
-    rts_path: Path
-    strategies: Mapping[str, StrategyCriteria]
-    trades: tuple[TradeRecord, ...]
-    bars: Mapping[str, BarSeries]
-    timelines: Mapping[str, TradeTimeline]
+    def to_json(self) -> dict[str, Any]:
+        """Serialize for the web UI and CLI --format json."""
+        g = self.graph
+        return {
+            "trade": {
+                "index": self.trade.index,
+                "symbol": self.trade.symbol,
+                "action": self.trade.action,
+                "date": self.trade.trade_date.isoformat(),
+                "strategy": self.trade.strategy,
+            },
+            "phase": self.phase.value,
+            "strategy": self.strategy,
+            "root_id": self.root_id,
+            "root_satisfied": self.root_satisfied,
+            "lookback_bars": self.lookback_bars,
+            "nodes": [
+                {
+                    "id": nid,
+                    "label": g.node_label(nid),
+                    "kind": g.nodes[nid].kind.name,
+                    "deps": list(g.nodes[nid].deps),
+                    "expr_source": g.nodes[nid].expr_source,
+                }
+                for nid in g.reachable_from(self.root_id)
+            ],
+            "timeline": [
+                {
+                    "bar_index": snap.bar_index,
+                    "date": snap.trade_date.isoformat(),
+                    "values": {nid: snap.values.get(nid) for nid in g.reachable_from(self.root_id)},
+                    "changed": list(snap.changed),
+                }
+                for snap in self.timeline
+            ],
+            "signal_bar_index": self.signal_bar.bar_index,
+        }

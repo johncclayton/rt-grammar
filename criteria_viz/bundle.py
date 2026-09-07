@@ -64,7 +64,9 @@ def build_session(
     )
 
     tree = parse_rts_file(rts, grammar_path=grammar)
-    strategies = extract_strategy_criteria(tree)
+    from validate_rts import read_script
+
+    strategies = extract_strategy_criteria(tree, source_text=read_script(rts))
     trade_rows = load_trades(trades)
     bar_map = load_bars(bars)
 

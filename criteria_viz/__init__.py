@@ -1,14 +1,23 @@
-"""
-Trade criteria visualizer — Snapshot Bundle (Candidate C).
+"""Trade criteria visualizer — public API.
 
-Public API (small surface):
-    build_session  — idempotent bundle construction at startup
-    serve          — read-only FastAPI over a frozen SessionBundle
-    get_trade_timeline — pure projection from bundle to one trade
+Callers should import only from this package root. Parsing, evaluation,
+and trades CSV layout are internal implementation details.
 """
 
-from criteria_viz.bundle import build_session
-from criteria_viz.projections import get_trade_timeline
-from criteria_viz.serve import serve
+from criteria_viz.graph import CriteriaGraph, CriterionNode, build_criteria_graph
+from criteria_viz.models import TradeCriteriaView, TradePhase, TradeRecord
+from criteria_viz.series import BarSeries, CsvBarSeries, MockBarSeries
+from criteria_viz.service import CriteriaTimelineService
 
-__all__ = ["build_session", "serve", "get_trade_timeline"]
+__all__ = [
+    "BarSeries",
+    "CriteriaGraph",
+    "CriteriaTimelineService",
+    "CriterionNode",
+    "CsvBarSeries",
+    "MockBarSeries",
+    "TradeCriteriaView",
+    "TradePhase",
+    "TradeRecord",
+    "build_criteria_graph",
+]
