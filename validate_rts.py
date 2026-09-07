@@ -15,6 +15,7 @@ you pass --lark-only to skip the RealTest step explicitly.
 import sys
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -112,10 +113,16 @@ def format_lark_parse_error(path: Path, content: str, exc: Exception) -> str:
     if isinstance(exc, UnexpectedToken):
         loc = f"{path_s}:{exc.line}:{exc.column}:"
         ctx = _source_context(content, exc.line, exc.column)
+        shown = str(exc.token).strip().splitlines()[0][:40]
         if exc.token.type == "$END":
             detail = "unexpected end of file (unclosed parenthesis or missing value?)"
+        elif shown.startswith("#"):
+            # RealTest folds an unrecognized #word into the previous item's
+            # value instead of flagging it, so a misspelled #endif silently
+            # leaves a conditional block open
+            detail = (f"{shown.split()[0]!r} is not a preprocessor directive "
+                      f"(#define #undef #ifdef #ifndef #else #endif)")
         else:
-            shown = str(exc.token).strip().splitlines()[0][:40]
             detail = f"unexpected input here: {shown!r}"
         return f"{loc}\n{ctx}\n  {detail}" if ctx else f"{loc} {detail}"
 
@@ -154,17 +161,68 @@ def format_lark_parse_error(path: Path, content: str, exc: Exception) -> str:
     return f"{path_s}:\n{exc}"
 
 
+def read_script(file_path: Path) -> str:
+    """Read a .rts file.
+
+    utf-8-sig handles the BOM the script editor writes on some files; scripts
+    saved by older editors are cp1252, so fall back rather than crash on a
+    stray accented character in a comment.
+    """
+    raw = file_path.read_bytes()
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+# A commented-out "Notes:" at column 1 does not reliably stay a comment in
+# RealTest -- it reads the line as an item named "notes" and rejects the file
+# ("reserved syntax elements cannot be used as item names", "unrecognized
+# setting name", ... depending on the enclosing section). The quirk is specific
+# to Notes: //Strategy:, //Data:, //atr: and the rest comment out normally.
+# Indenting the comment, or dropping the colon, avoids it.
+#
+# Whether a given file actually breaks depends on what follows the comment --
+# a commented-out block that runs to end of file is tolerated, real items after
+# it are not -- and that is not something worth reproducing. So the grammar
+# treats a comment as a comment and this is reported as a WARNING: it never
+# fails a file on its own, and when RealTest.exe is available its verdict is
+# the authoritative one.
+_COMMENTED_NOTES = re.compile(r"^//[ \t]*notes[ \t]*:", re.IGNORECASE | re.MULTILINE)
+
+
+def check_commented_notes(content: str):
+    """-> warning message, or None."""
+    m = _COMMENTED_NOTES.search(content)
+    if not m:
+        return None
+    line = content.count("\n", 0, m.start()) + 1
+    return (f"line {line}: a commented-out \"Notes:\" at column 1 is not always "
+            f"treated as a comment by RealTest. Indent it, or drop the colon.")
+
+
 def validate_file(parser, file_path: Path):
-    """Validate a single .rts file with Lark."""
+    """Validate a single .rts file with Lark. -> (ok, error_message)"""
+    content = ""
     try:
-        # utf-8-sig: the script editor writes a BOM on some files
-        content = file_path.read_text(encoding='utf-8-sig')
+        content = read_script(file_path)
         parser.parse(content)
         return True, None
     except (ParseError, LexError, UnexpectedInput) as e:
         return False, format_lark_parse_error(file_path, content, e)
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
+
+
+def warn_file(file_path: Path):
+    """Non-fatal warnings for a script. -> list of messages."""
+    try:
+        content = read_script(file_path)
+    except OSError:
+        return []
+    return [w for w in (check_commented_notes(content),) if w]
 
 
 def realtest_parse(exe: Path, file_path: Path, timeout_sec: float = 300.0):
@@ -315,11 +373,13 @@ def main():
     results = {}
     lark_failures: List[Tuple[str, str]] = []
     rt_failures: List[Tuple[str, str]] = []
+    warnings: List[Tuple[str, str]] = []
 
     for file_path in files_to_validate:
         lark_ok, lark_err = validate_file(lark_parser, file_path)
         if not lark_ok:
             lark_failures.append((file_path.name, lark_err or ""))
+        warnings.extend((file_path.name, w) for w in warn_file(file_path))
 
         rt_ok, rt_err = (True, None)
         if run_realtest:
@@ -340,10 +400,16 @@ def main():
         data_file = samples_dir.parent / "data.json"
         save_status_data(data_file, results)
 
+    def print_warnings():
+        # advisory only -- they never change the exit code
+        for name, warning in warnings:
+            print(f"Warning: {name} {warning}")
+
     if all_ok:
         print(_lark_status_line(total, 0))
         if run_realtest:
             print(_realtest_status_line(total, 0, skipped=None))
+        print_warnings()
         sys.exit(0)
 
     # Failure: status lines + details
@@ -353,6 +419,7 @@ def main():
     else:
         print(_realtest_status_line(total, 0, skipped=rt_skip_reason))
 
+    print_warnings()
     print("---")
     for name, err in lark_failures:
         print(f"{name} -- Lark:\n{err}\n")

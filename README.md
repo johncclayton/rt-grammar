@@ -54,6 +54,8 @@ Options:
 
 By default, each file is checked with **Lark** and, when `RealTest.exe` is available, **RealTest -parse**. If the executable is missing, only Lark runs. Use `--lark-only` to force grammar-only validation. On **success**, output is two lines when both checks run (`Lark: OK …` and `RealTest -parse: OK …`), or one line if only Lark runs.
 
+`Warning:` lines may also appear. They flag script patterns RealTest handles surprisingly (see **Known divergences** below) and never change the exit code.
+
 ### Examples
 
 **Validate single script:**
@@ -184,10 +186,16 @@ on syntax**) and over a second corpus of ~200 working strategies. What is left:
   therefore hold a syntax error RealTest never reports.
 - **A misspelled directive.** RealTest folds an unrecognized `#word` into the
   previous item's value rather than flagging it, so `#endi` can silently leave
-  an `#ifdef` block unclosed. The grammar rejects it.
-- **A commented-out `Notes:` header.** `//Notes: ...` at column 1 still starts
-  a Notes section in RealTest (other section names comment out normally). The
-  grammar treats the line as the comment it looks like.
+  an `#ifdef` block unclosed. The grammar rejects it and names the six valid
+  directives.
+- **A commented-out `Notes:` header.** `//Notes: ...` at column 1 is not
+  reliably treated as a comment by RealTest — it reads the line as an item
+  named `notes` and usually rejects the file. The quirk is specific to `Notes`
+  (`//Strategy:`, `//Data:`, `//atr:` all comment out normally) and to column 1
+  (indent it and it behaves), and whether a given file actually breaks depends
+  on what follows. Reproducing that is not worth it, so the grammar treats a
+  comment as a comment and `validate_rts.py` emits a **warning** instead —
+  advisory only, never changing the exit code.
 - **Semantics.** Everything under "What It Doesn't Check" above — file
   existence, definition order, list-length rules, real calendar dates.
 

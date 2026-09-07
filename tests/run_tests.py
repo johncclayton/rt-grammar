@@ -24,6 +24,8 @@ from lark import Lark
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+sys.path.insert(0, str(ROOT))
+from validate_rts import check_commented_notes, read_script  # noqa: E402
 DEFAULT_EXE = Path(os.environ.get("REALTEST_EXE", r"C:\RealTest\realtest.exe"))
 BATCHLOG = Path(r"C:\RealTest\batchlog.txt")
 
@@ -41,7 +43,7 @@ def load_parser(grammar: Path) -> Lark:
 def lark_check(parser: Lark, path: Path):
     """-> (accepted, message)"""
     try:
-        parser.parse(path.read_text(encoding="utf-8-sig"))
+        parser.parse(read_script(path))
         return True, ""
     except Exception as exc:
         line = getattr(exc, "line", None)
@@ -81,6 +83,14 @@ def main() -> int:
 
     failures = []
     counts = {}
+
+    # The commented-out "Notes:" trap is a warning, not a parse verdict: the
+    # grammar deliberately treats a comment as a comment, so there is no
+    # tests/valid or tests/invalid file for it.
+    if not check_commented_notes("Data:\n// notes: prose\n\tx:\tC\n"):
+        failures.append("check_commented_notes did not fire on a column-1 '// notes:'")
+    if check_commented_notes("Data:\n\t// notes: prose\n\tx:\tC\n"):
+        failures.append("check_commented_notes fired on an indented '// notes:'")
 
     for kind, folder, want in (("valid", HERE / "valid", True),
                                ("invalid", HERE / "invalid", False)):
