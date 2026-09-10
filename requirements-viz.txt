@@ -1,0 +1,4 @@
+# Optional dependencies for criteria_viz (Snapshot Bundle visualizer).
+# Install: pip install -r requirements.txt -r requirements-viz.txt
+fastapi>=0.110,<1
+uvicorn[standard]>=0.27,<1

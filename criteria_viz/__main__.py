@@ -1,0 +1,6 @@
+"""Allow ``python -m criteria_viz``."""
+
+from criteria_viz.cli import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())
