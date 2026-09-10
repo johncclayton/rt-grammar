@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from criteria_viz.errors import ExportError
-from criteria_viz.export.plan import ExportPlan, SeriesSpec
+from criteria_viz.export.plan import ExportPlan, SeriesSpec, export_date_column
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,12 +58,15 @@ class CsvBarSeriesStore:
     ) -> "CsvBarSeriesStore":
         spec = plan.per_strategy[strategy]
         required = {s.csv_column for s in spec.series}
-        required.add("Date")
+        date_col = export_date_column()
+        required.add(date_col)
 
         loaded: dict[str, BarSeries] = {}
         for csv_path in sorted(series_dir.glob("*.csv")):
             symbol = csv_path.stem.upper()
-            loaded[symbol] = _load_symbol_csv(csv_path, required_columns=required)
+            loaded[symbol] = _load_symbol_csv(
+                csv_path, required_columns=required, date_column=date_col
+            )
         return cls(loaded)
 
     def get(self, symbol: str) -> BarSeries:
@@ -76,7 +79,9 @@ class CsvBarSeriesStore:
         return tuple(sorted(self._series.keys()))
 
 
-def _load_symbol_csv(path: Path, *, required_columns: set[str]) -> BarSeries:
+def _load_symbol_csv(
+    path: Path, *, required_columns: set[str], date_column: str
+) -> BarSeries:
     with path.open(newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         if not reader.fieldnames:
@@ -87,10 +92,11 @@ def _load_symbol_csv(path: Path, *, required_columns: set[str]) -> BarSeries:
             raise ExportError(f"{path}: missing columns: {sorted(missing)}")
 
         dates: list[date] = []
-        column_buffers: dict[str, list[float | bool | None]] = {c: [] for c in required_columns if c != "Date"}
+        value_columns = required_columns - {date_column}
+        column_buffers: dict[str, list[float | bool | None]] = {c: [] for c in value_columns}
 
         for row in reader:
-            dates.append(_parse_date(row["Date"]))
+            dates.append(_parse_date(row[date_column]))
             for col in column_buffers:
                 column_buffers[col].append(_parse_cell(row.get(col, "")))
 
@@ -104,11 +110,18 @@ def value_at(
     spec_by_key: Mapping[str, SeriesSpec],
     series_key: str,
     bar_index: int,
+    *,
+    expr_source: str | None = None,
+    expr_to_col: Mapping[str, str] | None = None,
 ) -> float | bool | None:
     spec = spec_by_key.get(series_key)
     if spec is None:
-        raise ExportError(f"No export spec for series_key {series_key!r}")
-    col = spec.csv_column
+        if expr_source and expr_to_col and expr_source in expr_to_col:
+            col = expr_to_col[expr_source]
+        else:
+            raise ExportError(f"No export spec for series_key {series_key!r}")
+    else:
+        col = spec.csv_column
     if col not in series.columns:
         raise ExportError(f"Column {col!r} not loaded for {series.symbol}")
     return series.columns[col][bar_index]

@@ -16,7 +16,9 @@ def expr_to_text(tree: Tree | Token) -> str:
     children = tree.children
 
     if name == "logical_not":
-        return f"not {expr_to_text(children[0])}"
+        # Tree is (NOT token, expr) — use the expression child, not the operator token.
+        expr_child = children[-1]
+        return f"not {expr_to_text(expr_child)}"
     if name == "negate":
         return f"-{expr_to_text(children[0])}"
     if name == "unary_plus":
@@ -38,17 +40,21 @@ def expr_to_text(tree: Tree | Token) -> str:
         return f"{left} {op} {right}"
 
     if name in ("additive", "multiplicative"):
-        parts: list[str] = []
-        for i, child in enumerate(children):
-            if i == 0:
-                parts.append(expr_to_text(child))
-                continue
+        if not children:
+            return ""
+        parts = [expr_to_text(children[0])]
+        i = 1
+        while i < len(children):
+            child = children[i]
             if isinstance(child, Token):
-                op = child.value
                 if i + 1 < len(children):
-                    parts.append(f" {op} {expr_to_text(children[i + 1])}")
-            elif isinstance(child, Tree):
+                    parts.append(f" {child.value} {expr_to_text(children[i + 1])}")
+                    i += 2
+                else:
+                    i += 1
+            else:
                 parts.append(f" {expr_to_text(child)}")
+                i += 1
         return "".join(parts)
 
     if name == "power":

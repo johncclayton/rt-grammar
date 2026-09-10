@@ -29,11 +29,12 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     snippets_dir = out.parent / "companion_snippets"
     snippets_dir.mkdir(parents=True, exist_ok=True)
 
-    for backend in ("results", "scan"):
-        snippet = render_companion_snippet(plan, strategy, backend=backend)
-        snippet_path = snippets_dir / f"{strategy}_{backend}.rts"
-        snippet_path.write_text(snippet, encoding="utf-8")
-        print(f"Wrote companion snippet ({backend}): {snippet_path}")
+    snippet = render_companion_snippet(plan, strategy, backend="scan", wrapper_dir=snippets_dir)
+    snippet_path = snippets_dir / f"{strategy}_scan.rts"
+    snippet_path.write_text(snippet, encoding="utf-8")
+    print(f"Wrote companion snippet (testscan): {snippet_path}")
+    print(f"Add to {Path(args.rts).name}: Include: ?scriptpath?/{strategy}_scan.rts")
+    print(f"Run: RealTest.exe -test {Path(args.rts).name}")
 
     print(f"Series columns ({strategy}): {len(plan.per_strategy[strategy].series)}")
     return 0

@@ -24,12 +24,21 @@ class TradeRecord:
 
 def _parse_date(value: str) -> date:
     value = value.strip()
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+    if not value or value.lower() in ("n/a", "na", "-"):
+        raise TradeError(f"Missing trade date: {value!r}")
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y", "%m/%d/%y"):
         try:
             return datetime.strptime(value, fmt).date()
         except ValueError:
             continue
     raise TradeError(f"Unrecognized trade date: {value!r}")
+
+
+def _parse_optional_date(value: str) -> date | None:
+    value = value.strip()
+    if not value or value.lower() in ("n/a", "na", "-"):
+        return None
+    return _parse_date(value)
 
 
 def _normalize_header(name: str) -> str:
@@ -60,7 +69,11 @@ def load_trades_csv(
             if strategy_filter and strategy != strategy_filter:
                 continue
             date_in = _parse_date(row[date_col])
-            date_out = _parse_date(row[date_out_col]) if date_out_col and row.get(date_out_col, "").strip() else None
+            date_out = (
+                _parse_optional_date(row[date_out_col])
+                if date_out_col and row.get(date_out_col, "")
+                else None
+            )
             action = row[action_col].strip() if action_col else None
             trade_id = f"{strategy}:{symbol}:{date_in.isoformat()}:{action or 'trade'}"
             trades.append(

@@ -18,7 +18,7 @@ class _GraphBuilder:
         self.strategy = strategy
         self.data_items = dict(data_items)
         self.nodes: dict[str, CriterionNode] = {}
-        self._op_counters: dict[str, int] = {}
+        self._synthetic_seq = 0
 
     def build_all(self, formulas: Mapping[str, Tree]) -> dict[tuple[str, TradePhase], str]:
         for name, expr in self.data_items.items():
@@ -76,23 +76,23 @@ class _GraphBuilder:
             )
         return node_id
 
-    def _next_op_id(self, context: str, op: str) -> str:
-        key = f"{context}:{op}"
-        n = self._op_counters.get(key, 0)
-        self._op_counters[key] = n + 1
-        safe_ctx = context.replace(":", "_")
-        return f"cv:{self.strategy}:{safe_ctx}:{op}:{n}"
+    def _next_synthetic_id(self) -> str:
+        node_id = f"cv:{self._synthetic_seq}"
+        self._synthetic_seq += 1
+        return node_id
 
     def _build_expr(self, tree: Tree | Token, *, context: str, label: str) -> str:
         if isinstance(tree, Token):
+            if tree.type == "STRING":
+                return self._build_string_literal(tree.value)
             return self._build_ref(tree.value, context=context, label=label)
 
         name = tree.data
         children = tree.children
 
         if name == "logical_not":
-            op_id = self._next_op_id(context, "not")
-            dep = self._build_expr(children[0], context=op_id, label="not")
+            op_id = self._next_synthetic_id()
+            dep = self._build_expr(children[0], context=context, label="not")
             text = expr_to_text(tree)
             self.nodes[op_id] = CriterionNode(
                 id=op_id,
@@ -113,7 +113,7 @@ class _GraphBuilder:
                 dep_ids.append(self._build_expr(child, context=context, label=label))
             if len(dep_ids) == 1:
                 return dep_ids[0]
-            op_id = self._next_op_id(context, op_kind)
+            op_id = self._next_synthetic_id()
             text = expr_to_text(tree)
             self.nodes[op_id] = CriterionNode(
                 id=op_id,
@@ -128,9 +128,9 @@ class _GraphBuilder:
         if name == "comparison":
             if len(children) == 1:
                 return self._build_expr(children[0], context=context, label=label)
-            op_id = self._next_op_id(context, "cmp")
-            left_id = self._build_expr(children[0], context=op_id, label="left")
-            right_id = self._build_expr(children[2], context=op_id, label="right")
+            op_id = self._next_synthetic_id()
+            left_id = self._build_expr(children[0], context=context, label="left")
+            right_id = self._build_expr(children[2], context=context, label="right")
             op_tok = children[1].value if len(children) > 1 else ""
             text = expr_to_text(tree)
             self.nodes[op_id] = CriterionNode(
@@ -145,12 +145,15 @@ class _GraphBuilder:
             return op_id
 
         if name == "funcall":
-            op_id = self._next_op_id(context, "call")
+            op_id = self._next_synthetic_id()
             dep_ids = []
             fname = children[0].value
             for child in children[1:]:
                 if isinstance(child, Tree) and child.data == "argument" and child.children:
-                    dep_ids.append(self._build_expr(child.children[0], context=op_id, label="arg"))
+                    arg = child.children[0]
+                    if isinstance(arg, Token) and arg.type == "STRING":
+                        continue
+                    dep_ids.append(self._build_expr(arg, context=context, label="arg"))
             text = expr_to_text(tree)
             self.nodes[op_id] = CriterionNode(
                 id=op_id,
@@ -164,9 +167,9 @@ class _GraphBuilder:
             return op_id
 
         if name in ("additive", "multiplicative", "power", "offset", "negate", "unary_plus", "bitwise_not"):
-            op_id = self._next_op_id(context, name)
+            op_id = self._next_synthetic_id()
             dep_ids = tuple(
-                self._build_expr(c, context=op_id, label=label)
+                self._build_expr(c, context=context, label=label)
                 for c in children
                 if not (isinstance(c, Token) and c.type in ("PLUS", "MINUS", "STAR", "SLASH", "MOD", "CARET", "BITOR", "BITXOR", "BITAND", "LSHIFT", "RSHIFT"))
             )
@@ -188,8 +191,8 @@ class _GraphBuilder:
         if len(children) == 1:
             return self._build_expr(children[0], context=context, label=label)
 
-        op_id = self._next_op_id(context, name)
-        dep_ids = tuple(self._build_expr(c, context=op_id, label=label) for c in children if isinstance(c, (Tree, Token)))
+        op_id = self._next_synthetic_id()
+        dep_ids = tuple(self._build_expr(c, context=context, label=label) for c in children if isinstance(c, (Tree, Token)))
         text = expr_to_text(tree)
         self.nodes[op_id] = CriterionNode(
             id=op_id,
@@ -201,12 +204,28 @@ class _GraphBuilder:
         )
         return op_id
 
+    def _build_string_literal(self, value: str) -> str:
+        node_id = f"str:{value}"
+        if node_id not in self.nodes:
+            self.nodes[node_id] = CriterionNode(
+                id=node_id,
+                label=value,
+                kind="string_literal",
+                series_key=node_id,
+                expr_source=value,
+                deps=(),
+            )
+        return node_id
+
     def _build_ref(self, name: str, *, context: str, label: str) -> str:
+        if name.startswith('"') and name.endswith('"'):
+            return self._build_string_literal(name)
+
         if name in self.data_items:
             return self._build_data_item(name, self.data_items[name])
 
         if name.replace(".", "").isdigit() or self._is_number(name):
-            node_id = self._next_op_id(context, "lit")
+            node_id = self._next_synthetic_id()
             self.nodes[node_id] = CriterionNode(
                 id=node_id,
                 label=name,
@@ -246,8 +265,10 @@ def build_criteria_graph(
     *,
     strategy: str | None = None,
     grammar_path: Path | None = None,
+    tree: Tree | None = None,
 ) -> CriteriaGraph:
-    tree = parse_rts_file(rts_path, grammar_path=grammar_path)
+    if tree is None:
+        tree = parse_rts_file(rts_path, grammar_path=grammar_path)
     data_items, strategies = extract_script(tree)
 
     if strategy is None:

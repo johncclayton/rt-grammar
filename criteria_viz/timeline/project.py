@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Mapping
 
-from criteria_viz.export.plan import ExportPlan, SeriesSpec
+from criteria_viz.export.plan import ExportPlan, SeriesSpec, expr_to_column_map
 from criteria_viz.export.store import BarSeries, CsvBarSeriesStore, value_at
 from criteria_viz.graph.model import CriteriaGraph, TradePhase
 from criteria_viz.trades.align import align_trade
@@ -67,6 +67,7 @@ def build_criteria_view(
 
     spec_list = plan.per_strategy[trade.strategy].series
     spec_by_key = {s.key: s for s in spec_list}
+    expr_cols = expr_to_column_map(plan, trade.strategy)
     reachable = graph.reachable(root_id)
 
     timeline: list[BarSnapshot] = []
@@ -76,9 +77,16 @@ def build_criteria_view(
         values: dict[str, float | bool | None] = {}
         for node_id in reachable:
             node = graph.node(node_id)
-            if node.kind == "literal":
+            if node.kind in ("literal", "param"):
                 continue
-            values[node_id] = value_at(series, spec_by_key, node.series_key, bar_index)
+            values[node_id] = value_at(
+                series,
+                spec_by_key,
+                node.series_key,
+                bar_index,
+                expr_source=node.expr_source,
+                expr_to_col=expr_cols,
+            )
 
         changed = frozenset(
             nid for nid, val in values.items() if nid not in prev or prev[nid] != val

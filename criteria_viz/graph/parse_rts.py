@@ -73,6 +73,20 @@ def extract_script(tree: Tree) -> tuple[Mapping[str, Tree], Mapping[str, Mapping
     return data_items, strategies
 
 
+def extract_parameters(tree: Tree) -> frozenset[str]:
+    """Parameter names declared in Parameters: sections."""
+    names: set[str] = set()
+    for section in tree.children:
+        if not isinstance(section, Tree):
+            continue
+        if section.data != "parameters_section":
+            continue
+        for decl in section.children:
+            if isinstance(decl, Tree) and decl.data == "param_decl":
+                names.add(_label_name(decl.children[0]))
+    return frozenset(names)
+
+
 def _expr_from_tagged(node: Tree | Token) -> Tree | None:
     if isinstance(node, Token):
         return None
