@@ -8,5 +8,10 @@ __pycache__/
 *.rtr
 *.rtd
 data.json
+
+# Generated / local RealTest export artifacts (never commit private strategies)
+companion_snippets/
+export_plan.json
+export_plan_*.json
 .DS_Store
 
